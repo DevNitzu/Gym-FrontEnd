@@ -30,11 +30,20 @@ html.dark {
     justify-content: center;
     align-items: center;
     background: linear-gradient(
-        rgba(59, 4, 65, 0.5), 
-        rgba(0, 0, 0, 0.9)
-    ), url('/img/login/fondo_login.jpg') center/cover no-repeat;
+        rgba(243, 28, 192, 0.6),  
+        rgba(220, 220, 220, 0.8)  
+    ), url('/img/login/fondo2_login.jpg') center/cover no-repeat;
     padding: 1rem;
     font-family: var(--font-sans);
+}
+
+
+/* Fondo para modo oscuro */
+html.dark .login-container {
+    background: linear-gradient(
+        rgba(112, 11, 111, 0.8),  
+        rgba(0, 0, 0, 0.9)      
+    ), url('/img/login/fondo2_login.jpg') center/cover no-repeat;
 }
 
 /* Caja del formulario con glassmorphism */

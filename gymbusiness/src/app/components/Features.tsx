@@ -1,4 +1,6 @@
+"use client";
 import React from "react";
+import { motion } from "framer-motion";
 
 const features = [
     {
@@ -6,7 +8,7 @@ const features = [
         desc: "Crea planes a la medida para cada cliente y sigue su progreso.",
         icon: (
             <svg
-                className="w-10 h-10 text-yellow-400"
+                className="w-6 h-6 text-pink-500"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth={2}
@@ -23,7 +25,7 @@ const features = [
         desc: "Sigue las métricas de tus clientes desde cualquier lugar.",
         icon: (
             <svg
-                className="w-10 h-10 text-yellow-400"
+                className="w-6 h-6 text-pink-500"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth={2}
@@ -41,7 +43,7 @@ const features = [
         desc: "Crea retos y desafíos para mantener a tus clientes motivados.",
         icon: (
             <svg
-                className="w-10 h-10 text-yellow-400"
+                className="w-6 h-6 text-pink-500"
                 fill="none"
                 stroke="currentColor"
                 strokeWidth={2}
@@ -63,15 +65,21 @@ export default function Features() {
                     Características principales
                 </h2>
                 <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-10">
-                    {features.map(({ title, desc, icon }) => (
-                        <div
+                    {features.map(({ title, desc, icon }, i) => (
+                        <motion.div
                             key={title}
-                            className="bg-card p-6 sm:p-8 rounded-lg shadow hover:shadow-lg transition cursor-default flex flex-col items-start"
+                            className="bg-card p-6 sm:p-8 rounded-xl shadow-md hover:shadow-2xl transition-transform duration-300 cursor-default flex flex-col items-start"
+                            initial={{ opacity: 0, y: 20 }}
+                            whileInView={{ opacity: 1, y: 0 }}
+                            viewport={{ once: true }}
+                            transition={{ delay: i * 0.2, duration: 0.6 }}
                         >
-                            <div className="mb-4">{icon}</div>
+                            <div className="flex items-center justify-center w-12 h-12 rounded-full bg-pink-100 mb-4">
+                                {icon}
+                            </div>
                             <h3 className="text-xl font-semibold mb-2 text-card-fg">{title}</h3>
                             <p className="text-card-desc">{desc}</p>
-                        </div>
+                        </motion.div>
                     ))}
                 </div>
             </div>

@@ -1,6 +1,7 @@
 "use client";
 import { useEffect, useState, useRef } from "react";
 import Image from "next/image";
+import { motion, AnimatePresence } from "framer-motion";
 
 type Review = {
     id: number;
@@ -56,8 +57,8 @@ const reviews: Review[] = [
 function Star({ filled }: { filled: boolean }) {
     return (
         <svg
-            fill={filled ? "#fbbf24" : "none"}
-            stroke="#fbbf24"
+            fill={filled ? "#a83466" : "none"}
+            stroke="#a83466"
             strokeWidth="1.5"
             viewBox="0 0 24 24"
             className="w-5 h-5"
@@ -77,8 +78,6 @@ export default function ReviewsCarousel() {
     const [startIndex, setStartIndex] = useState(0);
     const timerRef = useRef<NodeJS.Timeout | null>(null);
 
-    // Número de cards visibles depende del viewport (tailwind breakpoints)
-    // Aquí definimos 1 móvil, 2 tablet, 3 escritorio con hooks y listener resize
     const [cardsToShow, setCardsToShow] = useState(3);
 
     useEffect(() => {
@@ -87,7 +86,7 @@ export default function ReviewsCarousel() {
             else if (window.innerWidth < 1024) setCardsToShow(2);
             else setCardsToShow(3);
         }
-        handleResize(); // run on mount
+        handleResize();
         window.addEventListener("resize", handleResize);
         return () => window.removeEventListener("resize", handleResize);
     }, []);
@@ -95,53 +94,72 @@ export default function ReviewsCarousel() {
     useEffect(() => {
         timerRef.current = setInterval(() => {
             setStartIndex((prev) => (prev + 1) % reviews.length);
-        }, 4000); // autoplay cada 4s
+        }, 4000);
 
         return () => {
             if (timerRef.current) clearInterval(timerRef.current);
         };
     }, []);
 
-    // Obtenemos los reviews que se mostrarán (circular)
     const visibleReviews = [];
     for (let i = 0; i < cardsToShow; i++) {
         visibleReviews.push(reviews[(startIndex + i) % reviews.length]);
     }
 
     return (
-        <section className="max-w-7xl mx-auto p-6 bg-bg rounded-xl shadow-lg text-fg select-none">
+        <section className="max-w-7xl mx-auto p-6 bg-bg rounded-2xl shadow-lg text-fg select-none">
             <h3 className="text-3xl font-bold mb-10 text-center">
                 Lo que dicen nuestros usuarios
             </h3>
 
-            <div className="flex space-x-8 overflow-hidden">
-                {visibleReviews.map(({ id, name, photo, comment, rating }) => (
-                    <div
-                        key={id}
-                        className="flex-shrink-0 w-full sm:w-1/2 lg:w-1/3 bg-card p-6 rounded-xl shadow-md flex flex-col items-center text-center"
-                    >
-                        <div className="relative w-24 h-24 rounded-full overflow-hidden mb-4">
-                            <Image
-                                src={photo}
-                                alt={name}
-                                fill
-                                sizes="96px"
-                                className="object-cover"
-                                priority={false}
-                            />
-                        </div>
+            <div className="flex space-x-6 overflow-hidden">
+                <AnimatePresence initial={false}>
+                    {visibleReviews.map(({ id, name, photo, comment, rating }) => (
+                        <motion.div
+                            key={id}
+                            className="flex-shrink-0 w-full sm:w-1/2 lg:w-1/3 bg-card p-6 rounded-xl shadow-md flex flex-col items-center text-center"
+                            initial={{ opacity: 0, y: 20 }}
+                            animate={{ opacity: 1, y: 0 }}
+                            exit={{ opacity: 0, y: -20 }}
+                            transition={{ duration: 0.6 }}
+                        >
+                            <div className="relative w-24 h-24 rounded-full overflow-hidden mb-4">
+                                <Image
+                                    src={photo}
+                                    alt={name}
+                                    fill
+                                    sizes="96px"
+                                    className="object-cover"
+                                    priority={false}
+                                />
+                            </div>
 
-                        <div className="flex justify-center mb-3 space-x-1">
-                            {[1, 2, 3, 4, 5].map((star) => (
-                                <Star key={star} filled={star <= rating} />
-                            ))}
-                        </div>
+                            <div className="flex justify-center mb-3 space-x-1">
+                                {[1, 2, 3, 4, 5].map((star) => (
+                                    <Star key={star} filled={star <= rating} />
+                                ))}
+                            </div>
 
-                        <p className="text-card-desc text-lg leading-relaxed mb-4 italic">
-                            &quot;{comment}&quot;
-                        </p>
-                        <p className="font-semibold text-card-fg text-lg">- {name}</p>
-                    </div>
+                            <p className="text-card-desc text-lg leading-relaxed mb-4 italic">
+                                &quot;{comment}&quot;
+                            </p>
+                            <p className="font-semibold text-card-fg text-lg">- {name}</p>
+                        </motion.div>
+                    ))}
+                </AnimatePresence>
+            </div>
+
+            {/* Dots indicadores */}
+            <div className="flex justify-center mt-6 space-x-2">
+                {reviews.map((_, idx) => (
+                    <button
+                        key={idx}
+                        className={`w-3 h-3 rounded-full transition-all duration-300 ${
+                            idx === startIndex ? "bg-pink-500 scale-125" : "bg-pink-200"
+                        }`}
+                        onClick={() => setStartIndex(idx)}
+                        aria-label={`Ver review ${idx + 1}`}
+                    />
                 ))}
             </div>
         </section>
