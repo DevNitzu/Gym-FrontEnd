@@ -16,6 +16,7 @@
     "@heroui/link": "2.2.21",
     "@heroui/listbox": "2.3.23",
     "@heroui/navbar": "2.2.22",
+    "@heroui/react": "^2.8.3",
     "@heroui/snippet": "2.2.25",
     "@heroui/switch": "2.2.22",
     "@heroui/system": "2.4.20",
@@ -31,6 +32,7 @@
     "react-dom": "18.3.1"
   },
   "devDependencies": {
+    "@iconify/react": "^6.0.1",
     "@next/eslint-plugin-next": "15.3.4",
     "@react-types/shared": "3.30.0",
     "@tailwindcss/postcss": "4.1.11",
