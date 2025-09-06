@@ -88,7 +88,7 @@ const LoginPage: React.FC = () => {
       className="
         relative min-h-[100vh] w-[100vw] overflow-hidden
         flex items-center
-        justify-center md:justify-end
+        justify-center
         p-4 md:pr-12 lg:pr-20
       "
     >
