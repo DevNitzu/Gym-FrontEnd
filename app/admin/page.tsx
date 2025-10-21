@@ -1,9 +1,5 @@
-import React from 'react'
+import { redirect } from "next/navigation";
 
-const Admin = () => {
-  return (
-    <div>Admin</div>
-  )
+export default function AdminIndex() {
+  redirect("/admin/dashboard");
 }
-
-export default Admin
