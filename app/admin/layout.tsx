@@ -1,22 +1,11 @@
-'use client'
+import type { ReactNode } from "react";
+import AdminSidebar from "@/components/Sidebar";
 
-import { Suspense } from "react";
-import { ThemeSwitch } from "@/components/theme-switch";
-
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default function AdminLayout({ children }: { children: ReactNode }) {
     return (
-        <div className="flex min-h-screen w-full">
-            {/* Sidebar fijo a la izquierda */}
-
-            {/* Contenido principal que ocupa el resto del espacio */}
-            <main className="flex-1 bg-background overflow-hidden">
-                <Suspense fallback={<div>Cargando...</div>}>
-                    <div className="flex items-center justify-center p-2 m-3 rounded-full absolute right-0 bottom-0 bg-gray-300 dark:bg-gray-900 backdrop-blur-sm shadow-lg z-50">
-                        <ThemeSwitch />
-                    </div>
-                    {children}
-                </Suspense>
-            </main>
+        <div className="min-h-screen grid grid-cols-[220px_1fr]">
+            <AdminSidebar />
+            <main className="p-6">{children}</main>
         </div>
-    )
+    );
 }
