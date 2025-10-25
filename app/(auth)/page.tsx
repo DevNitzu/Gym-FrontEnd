@@ -24,7 +24,7 @@ function isEmail(v: string) {
 export default function LoginPage() {
   const router = useRouter();
   const sp = useSearchParams();
-  const redirectTo = sp.get("redirect") || "/admin/dashboard";
+  const redirectTo = sp.get("redirect") || "/admin/gimnasios"; // lo ajustamos abajo con ?empresa
 
   const [email, setEmail] = React.useState("");
   const [pass, setPass] = React.useState("");
@@ -57,6 +57,36 @@ export default function LoginPage() {
   const passErr = touched.pass && pass.length < 6 ? "Mínimo 6 caracteres." : "";
   const isValid = isEmail(email) && pass.length >= 6;
 
+  async function getEmpresaIdDelEmpleado(correo: string, token?: string): Promise<{ id_empresa: number | null, empleado?: any }> {
+    try {
+      // Opción ideal si tu backend la soporta:
+      // const url = `${API_BASE}/api/v1/empleados?correo=${encodeURIComponent(correo)}`;
+
+      // Opción genérica: traer todo y filtrar por correo:
+      const url = `${API_BASE}/api/v1/empleados`;
+      const res = await fetch(url, {
+        headers: {
+          Accept: "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        cache: "no-store",
+        mode: "cors",
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status} al cargar empleados`);
+
+      const lista = await res.json();
+      // La respuesta esperada es un array de objetos como el ejemplo que mostraste
+      const empleado = Array.isArray(lista)
+        ? lista.find((e: any) => (e?.correo || "").toLowerCase() === correo.toLowerCase())
+        : null;
+
+      const id_empresa = empleado?.id_empresa ?? null;
+      return { id_empresa, empleado };
+    } catch (e) {
+      return { id_empresa: null };
+    }
+  }
+
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setMsg(null);
@@ -65,8 +95,9 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      //const url = `/api/v1/empleados/auth`; // ahora pega al proxy en Next
       const url = `${API_BASE}/api/v1/empleados/auth`;
+
+      // 1) Autenticación
       let res = await fetch(url, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -74,8 +105,7 @@ export default function LoginPage() {
         body: JSON.stringify({ correo: email, contrasena: pass }),
       });
 
-
-      // Fallback: algunos backends esperan { email, contrasena } o { email, password }
+      // Fallback de compatibilidad
       if (!res.ok && (res.status === 400 || res.status === 401 || res.status === 422)) {
         res = await fetch(url, {
           method: "POST",
@@ -90,11 +120,41 @@ export default function LoginPage() {
         throw new Error(j?.error || j?.message || "Credenciales incorrectas.");
       }
 
+      // 2) Parse de respuesta de auth
       const data = await res.json().catch(() => ({}));
-      // Si tu API devuelve token en el cuerpo:
-      if (data?.token) localStorage.setItem("auth:token", data.token);
+      const token: string | undefined = data?.token || data?.access_token || data?.jwt;
 
-      router.push(redirectTo);
+      if (token) localStorage.setItem("auth:token", token);
+      localStorage.setItem("auth:user_email", email);
+
+      // 3) Obtener id_empresa del empleado autenticado
+      // Si tu /auth YA devuelve id_empresa, úsalo directamente:
+      // const idEmpresaFromAuth = data?.id_empresa ?? data?.empresa?.id;
+      // if (idEmpresaFromAuth) { ...redirect... } else { ...consultar empleados... }
+
+      let idEmpresa: number | null = data?.id_empresa ?? null;
+
+      if (!idEmpresa) {
+        const { id_empresa, empleado } = await getEmpresaIdDelEmpleado(email, token);
+        idEmpresa = id_empresa;
+        if (empleado) {
+          localStorage.setItem("auth:empleado", JSON.stringify(empleado));
+        }
+      }
+
+      if (!idEmpresa) {
+        throw new Error("No se encontró id_empresa del empleado.");
+      }
+
+      localStorage.setItem("auth:empresa", String(idEmpresa));
+
+      // 4) Redirigir a gimnasios con ?empresa=ID (respetando ?redirect si ya lo trae)
+      const hasEmpresaInRedirect = redirectTo.includes("empresa=");
+      const next = hasEmpresaInRedirect
+        ? redirectTo
+        : `${redirectTo}?empresa=${encodeURIComponent(String(idEmpresa))}`;
+
+      router.push(next);
     } catch (err: any) {
       setMsg(err?.message || "No se pudo iniciar sesión.");
     } finally {
@@ -117,7 +177,7 @@ export default function LoginPage() {
         className="relative z-10 w-full max-w-sm bg-white/30 backdrop-blur-xl border border-white/40 shadow-lg rounded-2xl overflow-hidden"
       >
         <CardBody className="p-0">
-          {/* Header con imagen */}
+          {/* Header */}
           <div className="relative">
             <div className="h-24 w-full bg-gradient-to-b from-sky-200/80 via-sky-100/60 to-transparent" />
             <div className="absolute inset-x-0 -bottom-6 flex justify-center">
@@ -209,7 +269,6 @@ export default function LoginPage() {
                 </Link>
               </div>
 
-              {/* Botones en la misma fila */}
               <div className="flex gap-3">
                 <Button
                   type="submit"

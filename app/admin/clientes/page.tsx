@@ -1,157 +1,237 @@
 "use client";
 
-import React, { useMemo, useState } from "react";
+import React, { useMemo, useState, useEffect } from "react";
 import {
-    Button,
-    Card,
-    CardBody,
-    CardHeader,
-    Chip,
-    Input,
-    Modal,
-    ModalBody,
-    ModalContent,
-    ModalFooter,
-    ModalHeader,
-    Select,
-    SelectItem,
-    Switch,
-    Table,
-    TableBody,
-    TableCell,
-    TableColumn,
-    TableHeader,
-    TableRow,
-    Textarea,
-    Avatar,
-    useDisclosure,
-    Link,
+    Button, Card, CardBody, CardHeader, Chip, Input, Modal, ModalBody,
+    ModalContent, ModalFooter, ModalHeader, Switch, Table, TableBody,
+    TableCell, TableColumn, TableHeader, TableRow, Avatar, useDisclosure, Link, Spinner
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
-// ---- Tipos ----
-type Cliente = {
-    id: string;
+const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+
+/* ===== Modelo interno normalizado ===== */
+export type ApiCliente = {
+    id_cliente: number;
+    cedula: string;
     nombres: string;
+    apellidos: string;
+    telefono: string;
     email: string;
-    telefono?: string;      // formato +593 99...
-    ciudad?: string;
-    tipo: "mayorista" | "minorista";
-    activo: boolean;
-    notas?: string;
-    avatarUrl?: string;
-    saldo?: number;         // opcional: saldo a favor/deuda
+    estado: boolean;
 };
 
-// ---- Datos demo (reemplace por fetch a tu API/DB) ----
-const SEED: Cliente[] = [
-    {
-        id: "CLI-0001",
-        nombres: "Distribuidora Andes",
-        email: "compras@andes.ec",
-        telefono: "+593 99 444 1111",
-        ciudad: "Quito",
-        tipo: "mayorista",
-        activo: true,
-        notas: "Prefiere combos de jeans. Envíos los lunes.",
-        saldo: -120, // negativo: deuda
-    },
-    {
-        id: "CLI-0002",
-        nombres: "María Suárez",
-        email: "maria@gmail.com",
-        telefono: "+593 98 222 2222",
-        ciudad: "Ambato",
-        tipo: "minorista",
-        activo: true,
-        saldo: 0,
-    },
-    {
-        id: "CLI-0003",
-        nombres: "Boutique Centro",
-        email: "ventas@boutiquecentro.ec",
-        telefono: "+593 97 333 3333",
-        ciudad: "Cuenca",
-        tipo: "mayorista",
-        activo: false,
-        notas: "Reactivar en noviembre.",
-        saldo: 60,
-    },
-];
+/* ===== Tipo extendido para el modal (solo UI) ===== */
+type EditingCliente = ApiCliente & { __contrasena?: string };
 
-// ---- Página ----
+/* ===== Normalizador ===== */
+function normalizeCliente(raw: any): ApiCliente {
+    const nombres = raw?.nombres ?? raw?.nombre ?? "";
+    const apellidos = raw?.apellidos ?? raw?.apellido ?? "";
+    const email = raw?.email ?? raw?.correo ?? "";
+    const telefono = raw?.telefono ?? "";
+    const cedula = raw?.cedula ?? "";
+    const id_cliente = Number(raw?.id_cliente ?? raw?.id ?? 0);
+
+    // estado: boolean | 0/1 | "true"/"false"/"1"/"0"
+    let estado: boolean;
+    const est = raw?.estado;
+    if (typeof est === "boolean") estado = est;
+    else if (typeof est === "number") estado = est === 1;
+    else if (typeof est === "string") estado = est.toLowerCase() === "true" || est === "1";
+    else estado = true;
+
+    return {
+        id_cliente,
+        cedula: String(cedula),
+        nombres: String(nombres),
+        apellidos: String(apellidos),
+        email: String(email),
+        telefono: String(telefono),
+        estado,
+    };
+}
+
+/* ===== Helpers API ===== */
+async function apiFetch(path: string, init?: RequestInit) {
+    const token = typeof window !== "undefined" ? localStorage.getItem("auth:token") : null;
+    const headers = new Headers(init?.headers || {});
+    headers.set("Accept", "application/json");
+    if (init?.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+    if (token) headers.set("Authorization", `Bearer ${token}`);
+    const res = await fetch(`${API_BASE}${path}`, {
+        ...init,
+        headers,
+        cache: "no-store",
+        mode: "cors",
+    });
+    if (!res.ok) {
+        let msg = `HTTP ${res.status}`;
+        try {
+            const j = await res.json();
+            msg = (j?.message || j?.detail || j?.error || msg) as string;
+        } catch { }
+        throw new Error(msg);
+    }
+    if (res.status === 204) return null;
+    return res.json();
+}
+
+async function listClientes(): Promise<ApiCliente[]> {
+    const data = await apiFetch(`/api/v1/clientes`);
+    const arr = Array.isArray(data) ? data : [];
+    return arr.map(normalizeCliente);
+}
+
+/** POST exige: { nombre, apellido, cedula, correo, contrasena, fecha_creacion } */
+async function createCliente(body: {
+    nombre: string;
+    apellido: string;
+    cedula: string;
+    correo: string;
+    contrasena: string;
+    fecha_creacion?: string;
+}): Promise<ApiCliente> {
+    const payload = { ...body, fecha_creacion: body.fecha_creacion ?? new Date().toISOString() };
+    const created = await apiFetch(`/api/v1/clientes`, { method: "POST", body: JSON.stringify(payload) });
+    return normalizeCliente(created);
+}
+
+/** PUT usa el esquema del GET (nombres/apellidos/email/telefono/...) */
+async function updateCliente(id: number, c: Partial<ApiCliente>): Promise<ApiCliente> {
+    const updated = await apiFetch(`/api/v1/clientes/${id}`, { method: "PUT", body: JSON.stringify(c) });
+    return normalizeCliente(updated);
+}
+
+async function deleteCliente(id: number): Promise<void> {
+    await apiFetch(`/api/v1/clientes/${id}`, { method: "DELETE" });
+}
+
+/* ===== Página ===== */
 export default function ClientesPage() {
-    const [rows, setRows] = useState<Cliente[]>(SEED);
+    const [rows, setRows] = useState<ApiCliente[]>([]);
+    const [loading, setLoading] = useState(true);
+    const [err, setErr] = useState<string | null>(null);
+
     const [q, setQ] = useState("");
-    const [filterTipo, setFilterTipo] = useState<Set<string>>(new Set([]));
-    const [editing, setEditing] = useState<Cliente | null>(null);
+    const [editing, setEditing] = useState<EditingCliente | null>(null);
     const modal = useDisclosure();
 
-    const filtrados = useMemo(() => {
-        let r = rows;
-        if (q.trim()) {
-            const s = q.toLowerCase();
-            r = r.filter(
-                (c) =>
-                    c.nombres.toLowerCase().includes(s) ||
-                    c.email.toLowerCase().includes(s) ||
-                    (c.telefono || "").toLowerCase().includes(s) ||
-                    (c.ciudad || "").toLowerCase().includes(s) ||
-                    c.id.toLowerCase().includes(s)
-            );
+    /* Cargar clientes */
+    async function refresh() {
+        try {
+            setErr(null);
+            setLoading(true);
+            const data = await listClientes();
+            setRows(data);
+        } catch (e: any) {
+            setErr(e?.message || "No se pudo cargar clientes");
+        } finally {
+            setLoading(false);
         }
-        if (filterTipo.size) {
-            r = r.filter((c) => filterTipo.has(c.tipo));
-        }
-        return r;
-    }, [q, rows, filterTipo]);
+    }
+    useEffect(() => { refresh(); }, []);
 
+    /* Búsqueda */
+    const filtrados = useMemo(() => {
+        if (!q.trim()) return rows;
+        const s = q.toLowerCase();
+        return rows.filter((c) =>
+            [c.nombres, c.apellidos, c.email, c.telefono, String(c.id_cliente), c.cedula]
+                .join(" ")
+                .toLowerCase()
+                .includes(s)
+        );
+    }, [q, rows]);
+
+    /* Acciones UI */
     function onNew() {
         setEditing({
-            id: "",
+            id_cliente: 0,
+            cedula: "",
             nombres: "",
-            email: "",
+            apellidos: "",
             telefono: "",
-            ciudad: "",
-            tipo: "minorista",
-            activo: true,
-            notas: "",
-            saldo: 0,
+            email: "",
+            estado: true,
+            __contrasena: "",
         });
         modal.onOpen();
     }
 
-    function onEdit(cli: Cliente) {
-        setEditing({ ...cli });
+    function onEdit(cli: ApiCliente) {
+        setEditing({ ...cli, __contrasena: "" });
         modal.onOpen();
     }
 
-    function onDelete(id: string) {
-        // TODO: Confirm + llamada a API
-        setRows((prev) => prev.filter((c) => c.id !== id));
-    }
-
-    function onToggleActivo(id: string, val: boolean) {
-        setRows((prev) => prev.map((c) => (c.id === id ? { ...c, activo: val } : c)));
-    }
-
-    function onSave() {
-        if (!editing) return;
-        // Validación mínima
-        if (!editing.nombres.trim() || !editing.email.trim()) return;
-
-        if (editing.id) {
-            // update
-            setRows((prev) => prev.map((c) => (c.id === editing.id ? editing : c)));
-        } else {
-            // create
-            const nuevo: Cliente = {
-                ...editing,
-                id: `CLI-${Date.now().toString().slice(-6)}`,
-            };
-            setRows((prev) => [nuevo, ...prev]);
+    async function onDelete(id: number) {
+        if (!confirm("¿Eliminar este cliente?")) return;
+        try {
+            await deleteCliente(id);
+            setRows((prev) => prev.filter((c) => c.id_cliente !== id));
+        } catch (e: any) {
+            alert(e?.message || "No se pudo eliminar");
         }
-        modal.onClose();
+    }
+
+    async function onToggleActivo(c: ApiCliente, val: boolean) {
+        try {
+            // Optimista
+            setRows((prev) => prev.map((x) => (x.id_cliente === c.id_cliente ? { ...x, estado: val } : x)));
+            await updateCliente(c.id_cliente, { estado: val });
+        } catch (e: any) {
+            // Revertir
+            setRows((prev) => prev.map((x) => (x.id_cliente === c.id_cliente ? { ...x, estado: !val } : x)));
+            alert(e?.message || "No se pudo cambiar el estado");
+        }
+    }
+
+    async function onSave() {
+        if (!editing) return;
+
+        const isCreate = !editing.id_cliente || editing.id_cliente === 0;
+
+        // Validaciones mínimas
+        if (!editing.nombres.trim() || !editing.apellidos.trim() || !editing.email.trim()) {
+            alert("Nombres, apellidos y correo son obligatorios.");
+            return;
+        }
+        if (isCreate && !editing.__contrasena?.trim()) {
+            alert("Para crear un cliente, la contraseña es obligatoria.");
+            return;
+        }
+
+        try {
+            if (isCreate) {
+                // UI -> POST
+                const body = {
+                    nombre: editing.nombres,
+                    apellido: editing.apellidos,
+                    cedula: editing.cedula || "",
+                    correo: editing.email,
+                    contrasena: editing.__contrasena!,
+                    fecha_creacion: new Date().toISOString(),
+                };
+                const created = await createCliente(body);
+                setRows((prev) => [created, ...prev]);
+            } else {
+                // PUT: usa claves del modelo normalizado (GET)
+                const upd = await updateCliente(editing.id_cliente, {
+                    nombres: editing.nombres,
+                    apellidos: editing.apellidos,
+                    email: editing.email,
+                    cedula: editing.cedula,
+                    telefono: editing.telefono,
+                    estado: editing.estado,
+                } as any);
+                setRows((prev) => prev.map((c) => (c.id_cliente === upd.id_cliente ? upd : c)));
+            }
+
+            modal.onClose();
+            setEditing(null);
+        } catch (e: any) {
+            alert(e?.message || "No se pudo guardar");
+        }
     }
 
     return (
@@ -162,25 +242,14 @@ export default function ClientesPage() {
                 <div className="flex flex-wrap gap-2">
                     <Input
                         aria-label="Buscar clientes"
-                        placeholder="Buscar por nombre, correo, ciudad…"
+                        placeholder="Buscar por nombre, correo, cédula, teléfono…"
                         variant="bordered"
                         value={q}
                         onValueChange={setQ}
                         startContent={<Icon icon="mdi:magnify" width={18} height={18} />}
-                        className="w-64"
+                        className="w-72"
+                        isDisabled={loading}
                     />
-                    <Select
-                        aria-label="Filtrar por tipo"
-                        selectionMode="multiple"
-                        variant="bordered"
-                        placeholder="Tipo"
-                        selectedKeys={filterTipo}
-                        onSelectionChange={(keys) => setFilterTipo(new Set(keys as Set<string>))}
-                        className="w-40"
-                    >
-                        <SelectItem key="mayorista">Mayorista</SelectItem>
-                        <SelectItem key="minorista">Minorista</SelectItem>
-                    </Select>
                     <Button
                         color="primary"
                         startContent={<Icon icon="mdi:account-plus" width={18} height={18} />}
@@ -188,99 +257,106 @@ export default function ClientesPage() {
                     >
                         Nuevo
                     </Button>
+                    <Button
+                        variant="flat"
+                        startContent={<Icon icon="mdi:refresh" width={18} height={18} />}
+                        onPress={refresh}
+                        isDisabled={loading}
+                    >
+                        Recargar
+                    </Button>
                 </div>
             </div>
 
-            {/* Tabla */}
-            <Card className="border">
-                <CardHeader className="font-semibold">Listado</CardHeader>
-                <CardBody>
-                    <Table aria-label="Tabla de clientes" removeWrapper>
-                        <TableHeader>
-                            <TableColumn>CLIENTE</TableColumn>
-                            <TableColumn>CONTACTO</TableColumn>
-                            <TableColumn>TIPO</TableColumn>
-                            <TableColumn>ESTADO</TableColumn>
-                            <TableColumn>SALDO</TableColumn>
-                            <TableColumn className="text-right">ACCIONES</TableColumn>
-                        </TableHeader>
-                        <TableBody emptyContent="Sin resultados">
-                            {filtrados.map((c) => (
-                                <TableRow key={c.id}>
-                                    <TableCell>
-                                        <div className="flex items-center gap-3">
-                                            <Avatar isBordered radius="full" size="sm" src={c.avatarUrl} name={c.nombres} />
+            {/* Estados */}
+            {loading && (
+                <div className="flex items-center justify-center py-16">
+                    <div className="flex items-center gap-3 text-foreground-500">
+                        <Spinner />
+                        <span>Cargando clientes…</span>
+                    </div>
+                </div>
+            )}
+
+            {err && !loading && (
+                <Card className="border">
+                    <CardBody className="text-center">
+                        <p className="font-medium">No se pudo cargar la lista.</p>
+                        <p className="text-sm text-foreground-500 mt-1">{err}</p>
+                    </CardBody>
+                </Card>
+            )}
+
+            {!loading && !err && (
+                <Card className="border">
+                    <CardHeader className="font-semibold">Listado</CardHeader>
+                    <CardBody>
+                        <Table aria-label="Tabla de clientes" removeWrapper>
+                            <TableHeader>
+                                <TableColumn>CLIENTE</TableColumn>
+                                <TableColumn>CONTACTO</TableColumn>
+                                <TableColumn>ESTADO</TableColumn>
+                                <TableColumn className="text-right">ACCIONES</TableColumn>
+                            </TableHeader>
+                            <TableBody emptyContent="Sin resultados">
+                                {filtrados.map((c) => (
+                                    <TableRow key={c.id_cliente}>
+                                        <TableCell>
+                                            <div className="flex items-center gap-3">
+                                                <Avatar isBordered radius="full" size="sm" name={`${c.nombres} ${c.apellidos}`} />
+                                                <div className="flex flex-col">
+                                                    <span className="font-medium">{c.nombres} {c.apellidos}</span>
+                                                    <span className="text-xs text-default-500">ID: {c.id_cliente} • C.I.: {c.cedula || "—"}</span>
+                                                </div>
+                                            </div>
+                                        </TableCell>
+
+                                        <TableCell>
                                             <div className="flex flex-col">
-                                                <span className="font-medium">{c.nombres}</span>
-                                                <span className="text-xs text-default-500">{c.id}</span>
-                                                {c.ciudad ? (
-                                                    <span className="text-xs text-default-500">{c.ciudad}</span>
+                                                <span className="text-sm">{c.email}</span>
+                                                {c.telefono ? (
+                                                    <Link
+                                                        isExternal
+                                                        href={`https://wa.me/${c.telefono.replace(/\D/g, "")}`}
+                                                        className="text-xs text-success flex items-center gap-1"
+                                                    >
+                                                        <Icon icon="mdi:whatsapp" width={14} height={14} />
+                                                        {c.telefono}
+                                                    </Link>
                                                 ) : null}
                                             </div>
-                                        </div>
-                                    </TableCell>
+                                        </TableCell>
 
-                                    <TableCell>
-                                        <div className="flex flex-col">
-                                            <span className="text-sm">{c.email}</span>
-                                            {c.telefono ? (
-                                                <Link
-                                                    isExternal
-                                                    href={`https://wa.me/${c.telefono.replace(/\D/g, "")}`}
-                                                    className="text-xs text-success flex items-center gap-1"
-                                                >
-                                                    <Icon icon="mdi:whatsapp" width={14} height={14} />
-                                                    {c.telefono}
-                                                </Link>
-                                            ) : null}
-                                        </div>
-                                    </TableCell>
+                                        <TableCell>
+                                            <div className="flex items-center gap-2">
+                                                <Chip color={c.estado ? "success" : "default"} size="sm" variant="flat">
+                                                    {c.estado ? "Activo" : "Inactivo"}
+                                                </Chip>
+                                                <Switch
+                                                    aria-label={`Cambiar estado de ${c.nombres} ${c.apellidos}`}
+                                                    isSelected={c.estado}
+                                                    onValueChange={(v) => onToggleActivo(c, v)}
+                                                />
+                                            </div>
+                                        </TableCell>
 
-                                    <TableCell className="capitalize">
-                                        <Chip size="sm" variant="flat">
-                                            {c.tipo}
-                                        </Chip>
-                                    </TableCell>
-
-                                    <TableCell>
-                                        <div className="flex items-center gap-2">
-                                            <Chip color={c.activo ? "success" : "default"} size="sm" variant="flat">
-                                                {c.activo ? "Activo" : "Inactivo"}
-                                            </Chip>
-                                            <Switch
-                                                aria-label={`Cambiar estado de ${c.nombres}`}
-                                                isSelected={c.activo}
-                                                onValueChange={(v) => onToggleActivo(c.id, v)}
-                                            />
-                                        </div>
-                                    </TableCell>
-
-                                    <TableCell>
-                                        {typeof c.saldo === "number" ? (
-                                            <span className={c.saldo < 0 ? "text-danger" : c.saldo > 0 ? "text-success" : "text-default-600"}>
-                                                {c.saldo < 0 ? `-$${Math.abs(c.saldo)}` : `$${c.saldo}`}
-                                            </span>
-                                        ) : (
-                                            "-"
-                                        )}
-                                    </TableCell>
-
-                                    <TableCell className="text-right">
-                                        <div className="flex justify-end gap-2">
-                                            <Button size="sm" variant="light" onPress={() => onEdit(c)}>
-                                                <Icon icon="mdi:pencil" width={18} height={18} />
-                                            </Button>
-                                            <Button size="sm" color="danger" variant="light" onPress={() => onDelete(c.id)}>
-                                                <Icon icon="mdi:trash-can" width={18} height={18} />
-                                            </Button>
-                                        </div>
-                                    </TableCell>
-                                </TableRow>
-                            ))}
-                        </TableBody>
-                    </Table>
-                </CardBody>
-            </Card>
+                                        <TableCell className="text-right">
+                                            <div className="flex justify-end gap-2">
+                                                <Button size="sm" variant="light" onPress={() => onEdit(c)}>
+                                                    <Icon icon="mdi:pencil" width={18} height={18} />
+                                                </Button>
+                                                <Button size="sm" color="danger" variant="light" onPress={() => onDelete(c.id_cliente)}>
+                                                    <Icon icon="mdi:trash-can" width={18} height={18} />
+                                                </Button>
+                                            </div>
+                                        </TableCell>
+                                    </TableRow>
+                                ))}
+                            </TableBody>
+                        </Table>
+                    </CardBody>
+                </Card>
+            )}
 
             {/* Modal Crear/Editar */}
             <ClienteModal
@@ -294,7 +370,7 @@ export default function ClientesPage() {
     );
 }
 
-// ---- Modal de creación/edición ----
+/* ===== Modal Crear/Editar ===== */
 function ClienteModal({
     isOpen,
     onOpenChange,
@@ -304,11 +380,16 @@ function ClienteModal({
 }: {
     isOpen: boolean;
     onOpenChange: (v: boolean) => void;
-    data: Cliente | null;
-    setData: React.Dispatch<React.SetStateAction<Cliente | null>>;
+    data: EditingCliente | null;
+    setData: React.Dispatch<React.SetStateAction<EditingCliente | null>>;
     onSave: () => void;
 }) {
     if (!data) return null;
+
+    const set = (patch: Partial<EditingCliente>) =>
+        setData((prev) => (prev ? { ...prev, ...patch } : prev));
+
+    const isCreate = !data.id_cliente || data.id_cliente === 0;
 
     return (
         <Modal isOpen={isOpen} onOpenChange={onOpenChange} placement="center" size="lg">
@@ -317,78 +398,65 @@ function ClienteModal({
                     <>
                         <ModalHeader className="flex items-center gap-2">
                             <Icon icon="mdi:account" width={20} height={20} />
-                            {data.id ? "Editar cliente" : "Nuevo cliente"}
+                            {isCreate ? "Nuevo cliente" : "Editar cliente"}
                         </ModalHeader>
                         <ModalBody className="space-y-4">
                             <div className="grid md:grid-cols-2 gap-4">
                                 <Input
-                                    label="Nombres/Razón social"
+                                    label="Nombres"
                                     variant="bordered"
                                     value={data.nombres}
-                                    onValueChange={(v) => setData((p) => (p ? { ...p, nombres: v } : p))}
+                                    onValueChange={(v) => set({ nombres: v })}
                                     isRequired
+                                />
+                                <Input
+                                    label="Apellidos"
+                                    variant="bordered"
+                                    value={data.apellidos}
+                                    onValueChange={(v) => set({ apellidos: v })}
+                                    isRequired
+                                />
+                                <Input
+                                    label="Cédula"
+                                    variant="bordered"
+                                    value={data.cedula || ""}
+                                    onValueChange={(v) => set({ cedula: v })}
                                 />
                                 <Input
                                     label="Correo"
                                     type="email"
                                     variant="bordered"
                                     value={data.email}
-                                    onValueChange={(v) => setData((p) => (p ? { ...p, email: v } : p))}
+                                    onValueChange={(v) => set({ email: v })}
                                     isRequired
                                 />
+
+                                {isCreate && (
+                                    <Input
+                                        label="Contraseña"
+                                        type="password"
+                                        variant="bordered"
+                                        value={data.__contrasena || ""}
+                                        onValueChange={(v) => set({ __contrasena: v })}
+                                        isRequired
+                                    />
+                                )}
+
                                 <Input
                                     label="Teléfono (WhatsApp)"
                                     variant="bordered"
                                     value={data.telefono || ""}
-                                    onValueChange={(v) => setData((p) => (p ? { ...p, telefono: v } : p))}
-                                    description="Ej: +593 99 123 4567"
-                                />
-                                <Input
-                                    label="Ciudad"
-                                    variant="bordered"
-                                    value={data.ciudad || ""}
-                                    onValueChange={(v) => setData((p) => (p ? { ...p, ciudad: v } : p))}
-                                />
-                                <Select
-                                    label="Tipo"
-                                    variant="bordered"
-                                    selectedKeys={[data.tipo]}
-                                    onSelectionChange={(keys) => {
-                                        const key = Array.from(keys)[0] as Cliente["tipo"];
-                                        setData((p) => (p ? { ...p, tipo: key } : p));
-                                    }}
-                                >
-                                    <SelectItem key="mayorista">Mayorista</SelectItem>
-                                    <SelectItem key="minorista">Minorista</SelectItem>
-                                </Select>
-                                <Input
-                                    label="Saldo"
-                                    type="number"
-                                    variant="bordered"
-                                    value={String(data.saldo ?? 0)}
-                                    onValueChange={(v) => {
-                                        const n = Number(v);
-                                        setData((p) => (p ? { ...p, saldo: isNaN(n) ? 0 : n } : p));
-                                    }}
-                                    description="Negativo = deuda; Positivo = a favor"
+                                    onValueChange={(v) => set({ telefono: v })}
+                                    description="Ej: 099 123 4567"
                                 />
                             </div>
 
                             <Switch
-                                isSelected={data.activo}
-                                onValueChange={(v) => setData((p) => (p ? { ...p, activo: v } : p))}
+                                isSelected={!!data.estado}
+                                onValueChange={(v) => set({ estado: v })}
                             >
                                 Activo
                             </Switch>
-
-                            <Textarea
-                                label="Notas"
-                                placeholder="Preferencias, condiciones de pago, horarios…"
-                                variant="bordered"
-                                minRows={3}
-                                value={data.notas || ""}
-                                onValueChange={(v) => setData((p) => (p ? { ...p, notas: v } : p))}
-                            />
                         </ModalBody>
                         <ModalFooter>
                             <Button variant="light" onPress={onClose}>
