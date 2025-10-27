@@ -33,7 +33,6 @@ function normalizeCliente(raw: any): ApiCliente {
     const cedula = raw?.cedula ?? "";
     const id_cliente = Number(raw?.id_cliente ?? raw?.id ?? 0);
 
-    // estado: boolean | 0/1 | "true"/"false"/"1"/"0"
     let estado: boolean;
     const est = raw?.estado;
     if (typeof est === "boolean") estado = est;
@@ -176,11 +175,9 @@ export default function ClientesPage() {
 
     async function onToggleActivo(c: ApiCliente, val: boolean) {
         try {
-            // Optimista
             setRows((prev) => prev.map((x) => (x.id_cliente === c.id_cliente ? { ...x, estado: val } : x)));
             await updateCliente(c.id_cliente, { estado: val });
         } catch (e: any) {
-            // Revertir
             setRows((prev) => prev.map((x) => (x.id_cliente === c.id_cliente ? { ...x, estado: !val } : x)));
             alert(e?.message || "No se pudo cambiar el estado");
         }
@@ -191,7 +188,6 @@ export default function ClientesPage() {
 
         const isCreate = !editing.id_cliente || editing.id_cliente === 0;
 
-        // Validaciones mínimas
         if (!editing.nombres.trim() || !editing.apellidos.trim() || !editing.email.trim()) {
             alert("Nombres, apellidos y correo son obligatorios.");
             return;
@@ -203,7 +199,6 @@ export default function ClientesPage() {
 
         try {
             if (isCreate) {
-                // UI -> POST
                 const body = {
                     nombre: editing.nombres,
                     apellido: editing.apellidos,
@@ -215,7 +210,6 @@ export default function ClientesPage() {
                 const created = await createCliente(body);
                 setRows((prev) => [created, ...prev]);
             } else {
-                // PUT: usa claves del modelo normalizado (GET)
                 const upd = await updateCliente(editing.id_cliente, {
                     nombres: editing.nombres,
                     apellidos: editing.apellidos,
@@ -239,7 +233,7 @@ export default function ClientesPage() {
             {/* Encabezado */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <h1 className="text-2xl font-bold">Clientes</h1>
-                <div className="flex flex-wrap gap-2">
+                <div className="flex w-full sm:w-auto flex-wrap items-center gap-2">
                     <Input
                         aria-label="Buscar clientes"
                         placeholder="Buscar por nombre, correo, cédula, teléfono…"
@@ -247,13 +241,14 @@ export default function ClientesPage() {
                         value={q}
                         onValueChange={setQ}
                         startContent={<Icon icon="mdi:magnify" width={18} height={18} />}
-                        className="w-72"
+                        className="w-full sm:w-64 md:w-72"
                         isDisabled={loading}
                     />
                     <Button
                         color="primary"
                         startContent={<Icon icon="mdi:account-plus" width={18} height={18} />}
                         onPress={onNew}
+                        className="w-full sm:w-auto"
                     >
                         Nuevo
                     </Button>
@@ -262,6 +257,7 @@ export default function ClientesPage() {
                         startContent={<Icon icon="mdi:refresh" width={18} height={18} />}
                         onPress={refresh}
                         isDisabled={loading}
+                        className="w-full sm:w-auto"
                     >
                         Recargar
                     </Button>
@@ -291,69 +287,128 @@ export default function ClientesPage() {
                 <Card className="border">
                     <CardHeader className="font-semibold">Listado</CardHeader>
                     <CardBody>
-                        <Table aria-label="Tabla de clientes" removeWrapper>
-                            <TableHeader>
-                                <TableColumn>CLIENTE</TableColumn>
-                                <TableColumn>CONTACTO</TableColumn>
-                                <TableColumn>ESTADO</TableColumn>
-                                <TableColumn className="text-right">ACCIONES</TableColumn>
-                            </TableHeader>
-                            <TableBody emptyContent="Sin resultados">
-                                {filtrados.map((c) => (
-                                    <TableRow key={c.id_cliente}>
-                                        <TableCell>
-                                            <div className="flex items-center gap-3">
-                                                <Avatar isBordered radius="full" size="sm" name={`${c.nombres} ${c.apellidos}`} />
-                                                <div className="flex flex-col">
-                                                    <span className="font-medium">{c.nombres} {c.apellidos}</span>
-                                                    <span className="text-xs text-default-500">ID: {c.id_cliente} • C.I.: {c.cedula || "—"}</span>
+                        {/* === Vista móvil (cards) === */}
+                        <div className="sm:hidden space-y-3">
+                            {filtrados.length === 0 && (
+                                <div className="text-center text-default-500 py-8">Sin resultados</div>
+                            )}
+                            {filtrados.map((c) => (
+                                <div key={c.id_cliente} className="rounded-xl border p-3">
+                                    <div className="flex items-start gap-3">
+                                        <Avatar isBordered radius="full" size="sm" name={`${c.nombres} ${c.apellidos}`} />
+                                        <div className="flex-1 min-w-0">
+                                            <div className="flex items-center justify-between gap-2">
+                                                <div className="font-medium truncate">
+                                                    {c.nombres} {c.apellidos}
                                                 </div>
-                                            </div>
-                                        </TableCell>
-
-                                        <TableCell>
-                                            <div className="flex flex-col">
-                                                <span className="text-sm">{c.email}</span>
-                                                {c.telefono ? (
-                                                    <Link
-                                                        isExternal
-                                                        href={`https://wa.me/${c.telefono.replace(/\D/g, "")}`}
-                                                        className="text-xs text-success flex items-center gap-1"
-                                                    >
-                                                        <Icon icon="mdi:whatsapp" width={14} height={14} />
-                                                        {c.telefono}
-                                                    </Link>
-                                                ) : null}
-                                            </div>
-                                        </TableCell>
-
-                                        <TableCell>
-                                            <div className="flex items-center gap-2">
-                                                <Chip color={c.estado ? "success" : "default"} size="sm" variant="flat">
+                                                <Chip size="sm" variant="flat" color={c.estado ? "success" : "default"}>
                                                     {c.estado ? "Activo" : "Inactivo"}
                                                 </Chip>
-                                                <Switch
-                                                    aria-label={`Cambiar estado de ${c.nombres} ${c.apellidos}`}
-                                                    isSelected={c.estado}
-                                                    onValueChange={(v) => onToggleActivo(c, v)}
-                                                />
                                             </div>
-                                        </TableCell>
+                                            <div className="text-xs text-default-500 mt-1">
+                                                ID: {c.id_cliente} • C.I.: {c.cedula || "—"}
+                                            </div>
+                                            <div className="mt-2 text-sm break-words">{c.email}</div>
+                                            {c.telefono && (
+                                                <Link
+                                                    isExternal
+                                                    href={`https://wa.me/${c.telefono.replace(/\D/g, "")}`}
+                                                    className="text-xs text-success inline-flex items-center gap-1 mt-1"
+                                                >
+                                                    <Icon icon="mdi:whatsapp" width={14} height={14} />
+                                                    {c.telefono}
+                                                </Link>
+                                            )}
+                                        </div>
+                                    </div>
 
-                                        <TableCell className="text-right">
-                                            <div className="flex justify-end gap-2">
-                                                <Button size="sm" variant="light" onPress={() => onEdit(c)}>
-                                                    <Icon icon="mdi:pencil" width={18} height={18} />
-                                                </Button>
-                                                <Button size="sm" color="danger" variant="light" onPress={() => onDelete(c.id_cliente)}>
-                                                    <Icon icon="mdi:trash-can" width={18} height={18} />
-                                                </Button>
-                                            </div>
-                                        </TableCell>
-                                    </TableRow>
-                                ))}
-                            </TableBody>
-                        </Table>
+                                    <div className="mt-3 flex items-center justify-between">
+                                        <Switch
+                                            aria-label={`Cambiar estado de ${c.nombres} ${c.apellidos}`}
+                                            isSelected={c.estado}
+                                            onValueChange={(v) => onToggleActivo(c, v)}
+                                        >
+                                            Activo
+                                        </Switch>
+                                        <div className="flex gap-2">
+                                            <Button size="sm" variant="light" onPress={() => onEdit(c)}>
+                                                <Icon icon="mdi:pencil" width={18} height={18} />
+                                            </Button>
+                                            <Button size="sm" color="danger" variant="light" onPress={() => onDelete(c.id_cliente)}>
+                                                <Icon icon="mdi:trash-can" width={18} height={18} />
+                                            </Button>
+                                        </div>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+
+                        {/* === Vista tablet/escritorio (tabla) === */}
+                        <div className="hidden sm:block">
+                            <Table aria-label="Tabla de clientes" removeWrapper>
+                                <TableHeader>
+                                    <TableColumn>CLIENTE</TableColumn>
+                                    <TableColumn>CONTACTO</TableColumn>
+                                    <TableColumn>ESTADO</TableColumn>
+                                    <TableColumn className="text-right">ACCIONES</TableColumn>
+                                </TableHeader>
+                                <TableBody emptyContent="Sin resultados">
+                                    {filtrados.map((c) => (
+                                        <TableRow key={c.id_cliente}>
+                                            <TableCell>
+                                                <div className="flex items-center gap-3">
+                                                    <Avatar isBordered radius="full" size="sm" name={`${c.nombres} ${c.apellidos}`} />
+                                                    <div className="flex flex-col">
+                                                        <span className="font-medium">{c.nombres} {c.apellidos}</span>
+                                                        <span className="text-xs text-default-500">ID: {c.id_cliente} • C.I.: {c.cedula || "—"}</span>
+                                                    </div>
+                                                </div>
+                                            </TableCell>
+
+                                            <TableCell>
+                                                <div className="flex flex-col">
+                                                    <span className="text-sm break-words">{c.email}</span>
+                                                    {c.telefono ? (
+                                                        <Link
+                                                            isExternal
+                                                            href={`https://wa.me/${c.telefono.replace(/\D/g, "")}`}
+                                                            className="text-xs text-success flex items-center gap-1"
+                                                        >
+                                                            <Icon icon="mdi:whatsapp" width={14} height={14} />
+                                                            {c.telefono}
+                                                        </Link>
+                                                    ) : null}
+                                                </div>
+                                            </TableCell>
+
+                                            <TableCell>
+                                                <div className="flex items-center gap-2">
+                                                    <Chip color={c.estado ? "success" : "default"} size="sm" variant="flat">
+                                                        {c.estado ? "Activo" : "Inactivo"}
+                                                    </Chip>
+                                                    <Switch
+                                                        aria-label={`Cambiar estado de ${c.nombres} ${c.apellidos}`}
+                                                        isSelected={c.estado}
+                                                        onValueChange={(v) => onToggleActivo(c, v)}
+                                                    />
+                                                </div>
+                                            </TableCell>
+
+                                            <TableCell className="text-right">
+                                                <div className="flex justify-end gap-2">
+                                                    <Button size="sm" variant="light" onPress={() => onEdit(c)}>
+                                                        <Icon icon="mdi:pencil" width={18} height={18} />
+                                                    </Button>
+                                                    <Button size="sm" color="danger" variant="light" onPress={() => onDelete(c.id_cliente)}>
+                                                        <Icon icon="mdi:trash-can" width={18} height={18} />
+                                                    </Button>
+                                                </div>
+                                            </TableCell>
+                                        </TableRow>
+                                    ))}
+                                </TableBody>
+                            </Table>
+                        </div>
                     </CardBody>
                 </Card>
             )}
@@ -401,7 +456,7 @@ function ClienteModal({
                             {isCreate ? "Nuevo cliente" : "Editar cliente"}
                         </ModalHeader>
                         <ModalBody className="space-y-4">
-                            <div className="grid md:grid-cols-2 gap-4">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                 <Input
                                     label="Nombres"
                                     variant="bordered"

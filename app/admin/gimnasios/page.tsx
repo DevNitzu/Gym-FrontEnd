@@ -3,14 +3,14 @@
 import React from "react";
 import {
     Card, CardHeader, CardBody, CardFooter,
-    Button, Chip, Input, Spinner, Tooltip
+    Button, Chip, Input, Spinner, Tooltip, Image, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Checkbox
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { useRouter, useSearchParams } from "next/navigation";
 
 type EstadoSucursal = "Abierta" | "Cerrada" | "Mantenimiento";
 
-/** Estructura exacta que devuelve tu API */
+/** Estructura exacta que devuelve tu API de gimnasios */
 type ApiGimnasio = {
     id_gimnasio: number;
     id_empresa: number;
@@ -18,20 +18,32 @@ type ApiGimnasio = {
     direccion: string;
     telefono: string;
     correo: string;
-    activo: number;              // 1|0
-    fecha_creacion: string;      // "YYYY-MM-DD HH:mm:ss"
+    activo: number | boolean;      // 1|0 o true|false
+    fecha_creacion: string;        // "YYYY-MM-DD HH:mm:ss" o ISO
+};
+
+/** Estructura exacta que devuelve tu API de empresa */
+type ApiEmpresa = {
+    id_empresa: number;
+    nombre: string;
+    ruc?: string | null;
+    direccion?: string | null;
+    telefono?: string | null;
+    correo?: string | null;
+    fecha_creacion?: string | null;
+    activo?: boolean | number;
+    logo_url?: string | null;
 };
 
 type Row = {
-    gymId: string;               // p.ej. G-009
-    gymNombre: string;           // nombre
-    ciudad: string;              // tomado de direccion
-    sucursalId: string;          // G-009-S1 (una sucursal por gym)
-    sucursalNombre: string;      // "Sucursal Única"
+    gymId: string;
+    gymNombre: string;
+    ciudad: string;
+    sucursalId: string;
     miembros: number;
     aforo: number;
     checkinsHoy: number;
-    estado: EstadoSucursal;      // desde activo
+    estado: EstadoSucursal;
     telefono: string;
     correo: string;
     fechaCreacion?: string;
@@ -44,18 +56,29 @@ const estadoColor = (e: EstadoSucursal) =>
 
 const zpad3 = (n: number) => n.toString().padStart(3, "0");
 
+function toBool(v: number | boolean) {
+    return typeof v === "boolean" ? v : Number(v) === 1;
+}
+
+/** Resuelve logo_url relativo → absoluto */
+function getLogoUrl(logo_url?: string | null): string | null {
+    if (!logo_url) return null;
+    if (/^(https?:)?\/\//i.test(logo_url) || /^data:image\//i.test(logo_url)) return logo_url;
+    if (logo_url.startsWith("/")) return `${API_BASE}${logo_url}`;
+    return `${API_BASE}/${logo_url}`;
+}
+
 /** Mapea tu fila de BD a lo que la UI usa */
 function mapApiToRow(item: ApiGimnasio): Row {
     const gymId = `G-${zpad3(Number(item.id_gimnasio))}`;
     const sucursalId = `${gymId}-S1`;
-    const estado: EstadoSucursal = Number(item.activo) === 1 ? "Abierta" : "Cerrada";
+    const estado: EstadoSucursal = toBool(item.activo) ? "Abierta" : "Cerrada";
 
     return {
         gymId,
         gymNombre: item.nombre ?? "Gimnasio",
         ciudad: item.direccion ?? "—",
         sucursalId,
-        sucursalNombre: "Sucursal Única",
         miembros: 0,
         aforo: 0,
         checkinsHoy: 0,
@@ -66,6 +89,162 @@ function mapApiToRow(item: ApiGimnasio): Row {
     };
 }
 
+/** ---- Modal de creación ---- */
+function NewGymModal({
+    open,
+    onClose,
+    empresaId,
+    onCreated,
+}: {
+    open: boolean;
+    onClose: () => void;
+    empresaId: string;
+    onCreated: (nuevo: Row) => void;
+}) {
+    const [nombre, setNombre] = React.useState("");
+    const [direccion, setDireccion] = React.useState("");
+    const [telefono, setTelefono] = React.useState("");
+    const [correo, setCorreo] = React.useState("");
+    const [activo, setActivo] = React.useState(true);
+    const [loading, setLoading] = React.useState(false);
+    const [error, setError] = React.useState<string | null>(null);
+
+    React.useEffect(() => {
+        if (open) {
+            setNombre("");
+            setDireccion("");
+            setTelefono("");
+            setCorreo("");
+            setActivo(true);
+            setLoading(false);
+            setError(null);
+        }
+    }, [open]);
+
+    function isEmail(v: string) {
+        return !v || /\S+@\S+\.\S+/.test(v);
+    }
+
+    const canSave = nombre.trim().length > 0 && isEmail(correo) && !loading;
+
+    const handleSubmit = async () => {
+        try {
+            setLoading(true);
+            setError(null);
+
+            const body = {
+                id_empresa: Number(empresaId),
+                nombre: nombre.trim(),
+                direccion: direccion.trim(),
+                telefono: telefono.trim(),
+                correo: correo.trim(),
+                activo, // el schema muestra boolean; si tu API acepta 1/0, cámbialo a Number(activo)
+                // fecha_creacion: se puede omitir para que el backend setee
+            };
+
+            const url = `${API_BASE}/api/v1/gimnasios`;
+            const res = await fetch(url, {
+                method: "POST",
+                headers: {
+                    Accept: "application/json",
+                    "Content-Type": "application/json",
+                },
+                mode: "cors",
+                body: JSON.stringify(body),
+            });
+
+            if (!res.ok) {
+                const t = await res.text().catch(() => "");
+                throw new Error(`HTTP ${res.status} al crear: ${t || "sin detalle"}`);
+            }
+
+            const created: ApiGimnasio =
+                (await res.json()) as ApiGimnasio;
+
+            // Normaliza por si el backend devuelve boolean/number y fecha en ISO
+            const creadoMapeado = mapApiToRow({
+                ...created,
+                activo: typeof created.activo === "boolean" ? created.activo : Number(created.activo),
+                fecha_creacion:
+                    created.fecha_creacion ??
+                    new Date().toISOString(),
+            });
+
+            onCreated(creadoMapeado);
+            onClose();
+        } catch (e: any) {
+            setError(e?.message ?? "No se pudo crear el gimnasio");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <Modal isOpen={open} onClose={onClose} size="lg" backdrop="opaque">
+            <ModalContent>
+                <ModalHeader className="flex items-center gap-2">
+                    <Icon icon="solar:add-circle-bold-duotone" />
+                    Agregar gimnasio
+                </ModalHeader>
+                <ModalBody className="space-y-4">
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                        <Input
+                            isRequired
+                            label="Nombre"
+                            placeholder="Ej. Gimnasio Central"
+                            value={nombre}
+                            onValueChange={setNombre}
+                        />
+                        <Input
+                            label="Teléfono"
+                            placeholder="099 999 9999"
+                            value={telefono}
+                            onValueChange={setTelefono}
+                        />
+                        <Input
+                            label="Correo"
+                            type="email"
+                            isInvalid={!!correo && !/\S+@\S+\.\S+/.test(correo)}
+                            errorMessage={!!correo && !/\S+@\S+\.\S+/.test(correo) ? "Correo inválido" : undefined}
+                            placeholder="user@example.com"
+                            value={correo}
+                            onValueChange={setCorreo}
+                        />
+                        <Input
+                            label="Dirección"
+                            placeholder="Ciudad, calle y número"
+                            value={direccion}
+                            onValueChange={setDireccion}
+                        />
+                    </div>
+                    <div className="pt-1">
+                        <Checkbox isSelected={activo} onValueChange={setActivo}>
+                            Activo (aparece como <span className="font-semibold">Abierta</span> en la lista)
+                        </Checkbox>
+                    </div>
+
+                    {error && (
+                        <Card className="border bg-danger-50">
+                            <CardBody className="text-danger-700 text-sm">
+                                {error}
+                            </CardBody>
+                        </Card>
+                    )}
+                </ModalBody>
+                <ModalFooter>
+                    <Button variant="flat" onClick={onClose} isDisabled={loading}>
+                        Cancelar
+                    </Button>
+                    <Button color="primary" onClick={handleSubmit} isLoading={loading} isDisabled={!canSave}>
+                        Guardar
+                    </Button>
+                </ModalFooter>
+            </ModalContent>
+        </Modal>
+    );
+}
+
+/** ---- Página ---- */
 export default function GimnasiosPage() {
     const router = useRouter();
     const sp = useSearchParams();
@@ -73,7 +252,9 @@ export default function GimnasiosPage() {
 
     const [q, setQ] = React.useState("");
     const [rows, setRows] = React.useState<Row[] | null>(null);
+    const [empresa, setEmpresa] = React.useState<ApiEmpresa | null>(null);
     const [error, setError] = React.useState<string | null>(null);
+    const [isNewOpen, setIsNewOpen] = React.useState(false);
 
     React.useEffect(() => {
         let alive = true;
@@ -81,31 +262,40 @@ export default function GimnasiosPage() {
             try {
                 setError(null);
                 setRows(null);
+                setEmpresa(null);
 
-                const url = `${API_BASE}/api/v1/gimnasios/${encodeURIComponent(empresaId)}`;
-                const res = await fetch(url, {
-                    headers: { Accept: "application/json" },
-                    cache: "no-store",
-                    mode: "cors",
-                });
-                if (!res.ok) throw new Error(`HTTP ${res.status} al cargar ${url}`);
+                const gymsUrl = `${API_BASE}/api/v1/gimnasios/${encodeURIComponent(empresaId)}`;
+                const empUrl = `${API_BASE}/api/v1/empresas/${encodeURIComponent(empresaId)}`;
 
-                const data = await res.json();
-                const list: ApiGimnasio[] = Array.isArray(data)
-                    ? data
-                    : Array.isArray((data as any)?.items)
-                        ? (data as any).items
+                const [gymsRes, empRes] = await Promise.all([
+                    fetch(gymsUrl, { headers: { Accept: "application/json" }, cache: "no-store", mode: "cors" }),
+                    fetch(empUrl, { headers: { Accept: "application/json" }, cache: "no-store", mode: "cors" }),
+                ]);
+
+                if (!gymsRes.ok) throw new Error(`HTTP ${gymsRes.status} al cargar ${gymsUrl}`);
+                if (!empRes.ok) throw new Error(`HTTP ${empRes.status} al cargar ${empUrl}`);
+
+                const gymsData = await gymsRes.json();
+                const empData: ApiEmpresa = await empRes.json();
+
+                const list: ApiGimnasio[] = Array.isArray(gymsData)
+                    ? gymsData
+                    : Array.isArray((gymsData as any)?.items)
+                        ? (gymsData as any).items
                         : [];
 
                 const mapped = list.map(mapApiToRow);
-                if (alive) setRows(mapped);
+
+                if (alive) {
+                    setRows(mapped);
+                    setEmpresa(empData);
+                }
             } catch (e: any) {
                 if (alive) setError(e?.message ?? "Error al cargar");
             }
         })();
-        return () => {
-            alive = false;
-        };
+
+        return () => { alive = false; };
     }, [empresaId]);
 
     const filtered = React.useMemo(() => {
@@ -118,7 +308,6 @@ export default function GimnasiosPage() {
                 r.gymNombre,
                 r.ciudad,
                 r.sucursalId,
-                r.sucursalNombre,
                 r.telefono,
                 r.correo,
                 r.fechaCreacion ?? "",
@@ -129,7 +318,6 @@ export default function GimnasiosPage() {
         );
     }, [rows, q]);
 
-    // handler para accesibilidad con teclado
     const handleCardKeyDown = (e: React.KeyboardEvent, href: string) => {
         if (e.key === "Enter" || e.key === " ") {
             e.preventDefault();
@@ -137,18 +325,48 @@ export default function GimnasiosPage() {
         }
     };
 
+    const logo = getLogoUrl(empresa?.logo_url);
+    const empresaIniciales =
+        (empresa?.nombre || "")
+            .split(/\s+/)
+            .map(w => w[0])
+            .slice(0, 2)
+            .join("")
+            .toUpperCase() || "EM";
+
     return (
         <div className="space-y-6">
-            {/* Header */}
+            {/* Header con logo y datos de empresa */}
             <div className="flex items-center justify-between gap-3">
-                <div>
-                    <h1 className="text-2xl font-bold">Gimnasios</h1>
-                    <p className="text-sm text-foreground-500"></p>
+                <div className="flex items-center gap-3 min-w-0">
+                    <div className="h-12 w-12 rounded-xl bg-default-100 flex items-center justify-center overflow-hidden">
+                        {logo ? (
+                            <Image
+                                src={logo}
+                                alt={empresa?.nombre || "Logo empresa"}
+                                className="h-12 w-12 object-contain"
+                                removeWrapper
+                            />
+                        ) : (
+                            <span className="text-sm font-semibold">{empresaIniciales}</span>
+                        )}
+                    </div>
+                    <div className="min-w-0">
+                        <h1 className="text-2xl font-bold truncate">
+                            {empresa?.nombre || "Empresa"}
+                        </h1>
+                        {(empresa?.correo || empresa?.telefono) && (
+                            <p className="text-sm text-foreground-500 truncate">
+                                {empresa?.correo && <span className="mr-3">{empresa.correo}</span>}
+                            </p>
+                        )}
+                    </div>
                 </div>
+
                 <Button
                     color="primary"
                     startContent={<Icon icon="solar:add-circle-bold-duotone" />}
-                    onClick={() => router.push("/admin/gimnasios/nuevo")}
+                    onClick={() => setIsNewOpen(true)}
                 >
                     Nuevo Gimnasio
                 </Button>
@@ -188,7 +406,7 @@ export default function GimnasiosPage() {
                             className="mt-3"
                             variant="flat"
                             startContent={<Icon icon="solar:refresh-bold-duotone" />}
-                            onClick={() => router.refresh()}
+                            onClick={() => location.reload()}
                         >
                             Reintentar
                         </Button>
@@ -203,7 +421,6 @@ export default function GimnasiosPage() {
                         return (
                             <Card
                                 key={r.sucursalId}
-                                // ✅ SIN isPressable para evitar <button> dentro de <button>
                                 className="border hover:shadow-md transition cursor-pointer"
                                 onClick={() => router.push(href)}
                                 role="button"
@@ -234,18 +451,8 @@ export default function GimnasiosPage() {
                                                             {r.correo}
                                                         </span>
                                                     )}
-                                                    {r.fechaCreacion && (
-                                                        <Tooltip content="Fecha de creación">
-                                                            <span className="inline-flex items-center gap-1">
-                                                                <Icon icon="solar:calendar-bold" />
-                                                                {new Date(r.fechaCreacion.replace(" ", "T")).toLocaleString()}
-                                                            </span>
-                                                        </Tooltip>
-                                                    )}
+                                                    
                                                 </div>
-                                                <p className="truncate text-xs text-foreground-500">
-                                                    <span className="font-medium">Sucursal:</span> {r.sucursalNombre} ({r.sucursalId})
-                                                </p>
                                             </div>
                                         </div>
                                     </div>
@@ -277,7 +484,7 @@ export default function GimnasiosPage() {
                                         variant="flat"
                                         startContent={<Icon icon="solar:eye-bold-duotone" />}
                                         onClick={(e) => {
-                                            e.stopPropagation(); // evita que el click burbujee al Card
+                                            e.stopPropagation();
                                             router.push(href);
                                         }}
                                     >
@@ -289,6 +496,16 @@ export default function GimnasiosPage() {
                     })}
                 </div>
             )}
+
+            {/* Modal crear */}
+            <NewGymModal
+                open={isNewOpen}
+                onClose={() => setIsNewOpen(false)}
+                empresaId={empresaId}
+                onCreated={(nuevo) => {
+                    setRows((prev) => (prev ? [nuevo, ...prev] : [nuevo]));
+                }}
+            />
         </div>
     );
 }
