@@ -62,8 +62,8 @@ type EmpresaEdit = {
     correo: string;
     activo: boolean;
     fecha_creacion: string;
-    logo_url?: string | null;      // preview (de API o local)
-    _logoFile?: File | null;       // archivo seleccionado
+    logo_url?: string | null;  // preview (de API o local)
+    _logoFile?: File | null;   // archivo seleccionado
 };
 
 /* ====================== Utils ====================== */
@@ -102,6 +102,7 @@ function normalizeEmpleado(x: any): PerfilData {
 
 /* ====================== Fetch helpers ====================== */
 async function apiFetch(path: string, init?: RequestInit) {
+    const url = `${API_BASE}${path}`;
     const token = typeof window !== "undefined" ? localStorage.getItem("auth:token") : null;
     const headers = new Headers(init?.headers || {});
     headers.set("Accept", "application/json");
@@ -109,7 +110,10 @@ async function apiFetch(path: string, init?: RequestInit) {
         headers.set("Content-Type", "application/json");
     }
     if (token) headers.set("Authorization", `Bearer ${token}`);
-    const res = await fetch(`${API_BASE}${path}`, { ...init, headers, cache: "no-store", mode: "cors" });
+
+    console.debug("[apiFetch]", init?.method || "GET", url, init);
+
+    const res = await fetch(url, { ...init, headers, cache: "no-store", mode: "cors" });
     if (!res.ok) {
         let msg = `HTTP ${res.status}`;
         try { const j = await res.json(); msg = (j?.message || j?.detail || j?.error || msg) as string; } catch { }
@@ -121,12 +125,19 @@ async function apiFetch(path: string, init?: RequestInit) {
 
 async function getEmpleadoById(id_empleado: number): Promise<PerfilData> {
     const data = await apiFetch(`/api/v1/empleados/${id_empleado}`);
+    console.debug("[api] empleado by id ->", data);
     const raw = Array.isArray(data) ? data[0] : data;
     return normalizeEmpleado(raw ?? {});
 }
 
 async function getEmpresaById(id_empresa: number): Promise<ApiEmpresa> {
     return apiFetch(`/api/v1/empresas/${id_empresa}`);
+}
+
+async function getEmpleadosByEmpresa(id_empresa: number): Promise<ApiEmpleado[]> {
+    console.debug("[api] GET /api/v1/empleados/empresa/", id_empresa);
+    const data = await apiFetch(`/api/v1/empleados/empresa/${id_empresa}`);
+    return Array.isArray(data) ? (data as ApiEmpleado[]) : [];
 }
 
 async function updateEmpleado(id_empleado: number, patch: Partial<ApiEmpleado>) {
@@ -162,7 +173,6 @@ async function updateEmpresaMultipart(
             const h = new Headers();
             const token = typeof window !== "undefined" ? localStorage.getItem("auth:token") : null;
             if (token) h.set("Authorization", `Bearer ${token}`);
-            // NO poner Content-Type manualmente para multipart
             return h;
         })(),
         cache: "no-store",
@@ -181,9 +191,31 @@ async function updateEmpresaMultipart(
 }
 
 /* ====================== Hook id empleado ====================== */
-function useEmpleadoId(): number | null {
+function useEmpleadoId(): [number | null, (n: number) => void] {
     const sp = useSearchParams();
-    const [id, setId] = React.useState<number | null>(null);
+
+    const initial = React.useMemo(() => {
+        const q = sp.get("empleado");
+        if (q) {
+            const n = Number(q);
+            if (!Number.isNaN(n) && n > 0) return n;
+        }
+        try {
+            const saved = localStorage.getItem("auth:empleadoId");
+            if (saved) {
+                const n = Number(saved);
+                if (!Number.isNaN(n) && n > 0) return n;
+            }
+        } catch { }
+        return null;
+    }, [sp]);
+
+    const [id, setId] = React.useState<number | null>(initial);
+
+    const setIdAndPersist = React.useCallback((n: number) => {
+        setId(n);
+        try { localStorage.setItem("auth:empleadoId", String(n)); } catch { }
+    }, []);
 
     React.useEffect(() => {
         const q = sp.get("empleado");
@@ -192,24 +224,16 @@ function useEmpleadoId(): number | null {
             if (!Number.isNaN(n) && n > 0) {
                 setId(n);
                 try { localStorage.setItem("auth:empleadoId", String(n)); } catch { }
-                return;
             }
         }
-        try {
-            const saved = localStorage.getItem("auth:empleadoId");
-            if (saved) {
-                const n = Number(saved);
-                if (!Number.isNaN(n) && n > 0) setId(n);
-            }
-        } catch { }
     }, [sp]);
 
-    return id;
+    return [id, setIdAndPersist];
 }
 
 /* ====================== Página ====================== */
 export default function PerfilPage() {
-    const empleadoId = useEmpleadoId();
+    const [empleadoId, setEmpleadoId] = useEmpleadoId();
 
     const [data, setData] = React.useState<PerfilData | null>(null);
     const [loading, setLoading] = React.useState(true);
@@ -217,7 +241,6 @@ export default function PerfilPage() {
     const [message, setMessage] = React.useState<string | null>(null);
     const [err, setErr] = React.useState<string | null>(null);
 
-    // Empresa (GET + PUT multipart)
     const [empresaId, setEmpresaId] = React.useState<number | null>(null);
     const [empresa, setEmpresa] = React.useState<ApiEmpresa | null>(null);
     const [empresaEdit, setEmpresaEdit] = React.useState<EmpresaEdit | null>(null);
@@ -226,12 +249,26 @@ export default function PerfilPage() {
     const [empresaErr, setEmpresaErr] = React.useState<string | null>(null);
     const [empresaMsg, setEmpresaMsg] = React.useState<string | null>(null);
 
+    const [empleadosEmpresa, setEmpleadosEmpresa] = React.useState<ApiEmpleado[] | null>(null);
+    const [listLoading, setListLoading] = React.useState(false);
+
     const logoRef = React.useRef<HTMLInputElement>(null);
     const lastObjectUrlRef = React.useRef<string | null>(null);
 
     const { isOpen, onOpen, onOpenChange } = useDisclosure();
 
-    // Cargar perfil -> obtener id_empresa
+    React.useEffect(() => {
+        if (empresaId == null) {
+            try {
+                const eid = localStorage.getItem("auth:empresa");
+                if (eid) {
+                    const n = Number(eid);
+                    if (!Number.isNaN(n) && n > 0) setEmpresaId(n);
+                }
+            } catch { }
+        }
+    }, [empresaId]);
+
     React.useEffect(() => {
         let alive = true;
         (async () => {
@@ -253,7 +290,31 @@ export default function PerfilPage() {
         return () => { alive = false; };
     }, [empleadoId]);
 
-    // GET empresa
+    React.useEffect(() => {
+        let alive = true;
+        (async () => {
+            if (empleadoId || !empresaId) return;
+            try {
+                setListLoading(true);
+                setErr(null);
+                const lista = await getEmpleadosByEmpresa(empresaId);
+                if (!alive) return;
+                setEmpleadosEmpresa(lista);
+                if (lista.length === 1) {
+                    const unico = lista[0];
+                    setEmpleadoId(unico.id_empleado);
+                    setMessage(`Empleado ${unico.nombre} ${unico.apellido} cargado automáticamente.`);
+                }
+            } catch (e: any) {
+                if (!alive) return;
+                setErr(e?.message || "No se pudo listar empleados de la empresa.");
+            } finally {
+                if (alive) setListLoading(false);
+            }
+        })();
+        return () => { alive = false; };
+    }, [empleadoId, empresaId, setEmpleadoId]);
+
     const fetchEmpresa = React.useCallback(async (id: number) => {
         try {
             setEmpresaLoading(true);
@@ -261,7 +322,6 @@ export default function PerfilPage() {
             setEmpresaMsg(null);
             const emp = await getEmpresaById(id);
             setEmpresa(emp);
-            // normalizar a EmpresaEdit para edición
             setEmpresaEdit({
                 nombre: emp.nombre || "",
                 ruc: emp.ruc || "",
@@ -273,7 +333,6 @@ export default function PerfilPage() {
                 logo_url: emp.logo_url || null,
                 _logoFile: null,
             });
-            // limpiar previews previos
             if (lastObjectUrlRef.current) {
                 URL.revokeObjectURL(lastObjectUrlRef.current);
                 lastObjectUrlRef.current = null;
@@ -293,7 +352,6 @@ export default function PerfilPage() {
         setData(prev => prev ? { ...prev, [key]: value as any } : prev);
     };
 
-    /** PUT empresa (campos) en JSON, sin imagen */
     async function updateEmpresaJson(
         id_empresa: number,
         body: {
@@ -312,7 +370,6 @@ export default function PerfilPage() {
         });
     }
 
-    /** PUT logo: /api/v1/empresas/logo/{id_empresa} con multipart (logo_file) */
     async function uploadEmpresaLogo(id_empresa: number, file: File): Promise<ApiEmpresa> {
         const fd = new FormData();
         fd.append("logo_file", file);
@@ -324,7 +381,7 @@ export default function PerfilPage() {
             headers: (() => {
                 const h = new Headers();
                 if (token) h.set("Authorization", `Bearer ${token}`);
-                return h; // NO pongas Content-Type manualmente
+                return h;
             })(),
             cache: "no-store",
             mode: "cors",
@@ -340,7 +397,6 @@ export default function PerfilPage() {
         }
         return res.json();
     }
-
 
     async function handleSaveEmpleado() {
         if (!data) return;
@@ -365,7 +421,6 @@ export default function PerfilPage() {
         }
     }
 
-    // ===== Empresa: edición =====
     function setEmpresaField<K extends keyof EmpresaEdit>(key: K, val: EmpresaEdit[K]) {
         setEmpresaEdit((p) => p ? { ...p, [key]: val } : p);
     }
@@ -393,11 +448,9 @@ export default function PerfilPage() {
         setEmpresaMsg("Imagen quitada.");
     }
 
-
     async function handleSaveEmpresa() {
         if (!empresaEdit || !empresaId) return;
 
-        // Validación mínima requerida por el backend
         if (
             !empresaEdit.nombre.trim() ||
             !empresaEdit.ruc.trim() ||
@@ -413,7 +466,6 @@ export default function PerfilPage() {
         setEmpresaMsg(null);
 
         try {
-            // 1) Actualizar CAMPOS (JSON)
             const updatedCampos = await updateEmpresaJson(empresaId, {
                 nombre: empresaEdit.nombre,
                 ruc: empresaEdit.ruc,
@@ -424,16 +476,13 @@ export default function PerfilPage() {
                 fecha_creacion: empresaEdit.fecha_creacion,
             });
 
-            // 2) Si hay nuevo archivo, subir LOGO (multipart)
             let updatedFinal = updatedCampos;
             if (empresaEdit._logoFile) {
                 updatedFinal = await uploadEmpresaLogo(empresaId, empresaEdit._logoFile);
-                // limpiar el file seleccionado tras subir
                 setEmpresaEdit(p => p ? { ...p, _logoFile: null } : p);
                 if (logoRef.current) logoRef.current.value = "";
             }
 
-            // Sincroniza estado con lo devuelto por el backend
             setEmpresa(updatedFinal);
             setEmpresaEdit({
                 nombre: updatedFinal.nombre,
@@ -455,7 +504,6 @@ export default function PerfilPage() {
         }
     }
 
-    // limpiar objectURL al desmontar
     React.useEffect(() => {
         return () => {
             if (lastObjectUrlRef.current) {
@@ -470,22 +518,62 @@ export default function PerfilPage() {
             {/* Header */}
             <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2 sm:gap-4">
                 <h1 className="text-xl sm:text-2xl font-bold">Perfil</h1>
-                {message && (
-                    <div className="sm:self-end">
+                <div className="flex items-center gap-2">
+                    {loading && <Chip variant="flat" color="primary" startContent={<Spinner size="sm" />}>Cargando perfil…</Chip>}
+                    {message && (
                         <Chip color={message.includes("correctamente") ? "success" : "warning"} variant="flat">
                             {message}
                         </Chip>
-                    </div>
-                )}
+                    )}
+                    {err && <Chip color="warning" variant="flat">{err}</Chip>}
+                </div>
             </div>
 
             <Tabs aria-label="Configuración de perfil" color="primary" variant="underlined">
                 {/* ===== PERFIL ===== */}
-                <Tab key="perfil" title={<div className="flex items-center gap-2"><Icon icon="mdi:account" width={18} height={18} /><span>Perfil</span></div>}>
+                <Tab key="perfil" title={<div className="flex items-center gap-2"><Icon icon="mdi:account" width={18} height={18} /><span>Información</span></div>}>
                     <Card className="border">
                         <CardBody className="space-y-6">
-                            {!empleadoId || loading || err || !data ? (
-                                <div className="text-sm text-default-500">Carga un empleado para editar su perfil.</div>
+                            {!empleadoId ? (
+                                <div className="space-y-4">
+                                    {listLoading ? (
+                                        <div className="flex items-center gap-2 text-default-500 text-sm">
+                                            <Spinner size="sm" /> Buscando empleados de la empresa…
+                                        </div>
+                                    ) : empleadosEmpresa && empleadosEmpresa.length > 0 ? (
+                                        <div className="flex flex-col sm:flex-row items-start sm:items-end gap-3">
+                                            <Select
+                                                label="Selecciona un empleado"
+                                                variant="bordered"
+                                                className="min-w-[260px]"
+                                                onSelectionChange={(keys) => {
+                                                    const key = Array.from(keys)[0] as string;
+                                                    const n = Number(key);
+                                                    if (!Number.isNaN(n) && n > 0) setEmpleadoId(n);
+                                                }}
+                                            >
+                                                {empleadosEmpresa.map(emp => (
+                                                    <SelectItem key={emp.id_empleado}>
+                                                        {emp.nombre} {emp.apellido} — #{emp.id_empleado}
+                                                    </SelectItem>
+                                                ))}
+                                            </Select>
+                                            <Chip variant="flat" color="success">
+                                                {empleadosEmpresa.length} encontrados
+                                            </Chip>
+                                        </div>
+                                    ) : (
+                                        <div className="text-sm text-default-500">
+                                            Carga un empleado para editar su perfil. Si conoces el ID, abre la página como <code>?empleado=123</code>.
+                                        </div>
+                                    )}
+                                </div>
+                            ) : (!data || loading) ? (
+                                <div className="flex items-center gap-2 text-default-500 text-sm">
+                                    <Spinner size="sm" /> Cargando datos…
+                                </div>
+                            ) : err ? (
+                                <div className="text-sm text-default-500">{err}</div>
                             ) : (
                                 <>
                                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
@@ -528,6 +616,15 @@ export default function PerfilPage() {
                                         >
                                             Guardar cambios
                                         </Button>
+                                        <Button
+                                            className="w-full sm:w-auto"
+                                            variant="flat"
+                                            startContent={<Icon icon="mdi:lock-reset" width={18} height={18} />}
+                                            onPress={onOpen}
+                                            isDisabled={!data}
+                                        >
+                                            Cambiar contraseña
+                                        </Button>
                                     </div>
                                 </>
                             )}
@@ -535,7 +632,7 @@ export default function PerfilPage() {
                     </Card>
                 </Tab>
 
-                {/* ===== EMPRESA (GET + PUT multipart) ===== */}
+                {/* ===== EMPRESA ===== */}
                 <Tab key="empresa" title={<div className="flex items-center gap-2"><Icon icon="mdi:office-building" width={18} height={18} /><span>Empresa</span></div>}>
                     <Card className="border">
                         <CardHeader className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-2 lg:gap-4">
@@ -582,7 +679,6 @@ export default function PerfilPage() {
                                 )
                             ) : (
                                 <>
-                                    {/* Selector + preview logo */}
                                     <input
                                         ref={logoRef}
                                         type="file"
@@ -637,7 +733,6 @@ export default function PerfilPage() {
                                         </div>
                                     </div>
 
-                                    {/* Campos editables */}
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 p-3 sm:p-4 rounded-lg bg-default-100">
                                         <Input
                                             label="Nombre empresa"
@@ -695,7 +790,6 @@ export default function PerfilPage() {
                                         <div className="hidden md:block" />
                                     </div>
 
-                                    {/* Acciones */}
                                     <div className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                                         <Button
                                             className="w-full sm:w-auto"
@@ -726,7 +820,7 @@ export default function PerfilPage() {
                     </Card>
                 </Tab>
 
-                {/* ===== SEGURIDAD ===== */}
+                {/* ===== SEGURIDAD (Modal de contraseña ya integrado con API) ===== */}
                 <Tab key="seguridad" title={<div className="flex items-center gap-2"><Icon icon="mdi:shield-lock" width={18} height={18} /><span>Seguridad</span></div>}>
                     <Card className="border">
                         <CardBody className="space-y-4">
@@ -749,7 +843,7 @@ export default function PerfilPage() {
     );
 }
 
-/* ====================== Modal contraseña ====================== */
+/* ====================== Modal contraseña (PUT /api/v1/empleados/{id} con { contrasena }) ====================== */
 function ChangePasswordModal({
     isOpen,
     onOpenChange,
@@ -769,10 +863,21 @@ function ChangePasswordModal({
         setLoading(true);
         setMsg(null);
         try {
+            if (!empleadoId || empleadoId <= 0) throw new Error("Empleado inválido.");
             if (pwd.length < 8) throw new Error("La nueva contraseña debe tener al menos 8 caracteres.");
             if (pwd !== repeat) throw new Error("Las contraseñas no coinciden.");
-            await new Promise((r) => setTimeout(r, 700));
-            setMsg("Contraseña actualizada.");
+
+            // Si tu backend exige validar la actual, podrías enviarla también, ej. { contrasena_actual: current, contrasena: pwd }
+            // Según tu esquema, basta con enviar "contrasena"
+            await apiFetch(`/api/v1/empleados/${empleadoId}`, {
+                method: "PUT",
+                body: JSON.stringify({ contrasena: pwd }),
+            });
+
+            setMsg("Contraseña actualizada correctamente.");
+            setCurrent("");
+            setPwd("");
+            setRepeat("");
         } catch (e: any) {
             setMsg(e?.message || "No se pudo actualizar la contraseña.");
         } finally {
@@ -790,10 +895,29 @@ function ChangePasswordModal({
                             Cambiar contraseña
                         </ModalHeader>
                         <ModalBody className="space-y-3">
-                            {msg && <Chip color={msg.includes("actualizada") ? "success" : "warning"} variant="flat">{msg}</Chip>}
-                            <Input label="Contraseña actual" type="password" variant="bordered" value={current} onValueChange={setCurrent} />
-                            <Input label="Nueva contraseña" type="password" variant="bordered" value={pwd} onValueChange={setPwd} description="Mínimo 8 caracteres." />
-                            <Input label="Repetir nueva contraseña" type="password" variant="bordered" value={repeat} onValueChange={setRepeat} />
+                            {msg && <Chip color={msg.includes("correctamente") ? "success" : "warning"} variant="flat">{msg}</Chip>}
+                            <Input
+                                label="Contraseña actual"
+                                type="password"
+                                variant="bordered"
+                                value={current}
+                                onValueChange={setCurrent}
+                            />
+                            <Input
+                                label="Nueva contraseña"
+                                type="password"
+                                variant="bordered"
+                                value={pwd}
+                                onValueChange={setPwd}
+                                description="Mínimo 8 caracteres."
+                            />
+                            <Input
+                                label="Repetir nueva contraseña"
+                                type="password"
+                                variant="bordered"
+                                value={repeat}
+                                onValueChange={setRepeat}
+                            />
                         </ModalBody>
                         <ModalFooter className="flex flex-col sm:flex-row gap-2 sm:gap-3">
                             <Button className="w-full sm:w-auto" variant="light" onPress={onClose}>Cancelar</Button>

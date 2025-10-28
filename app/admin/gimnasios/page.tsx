@@ -334,6 +334,53 @@ export default function GimnasiosPage() {
             .join("")
             .toUpperCase() || "EM";
 
+    // --- Reloj Guayaquil ---
+    function useGuayaquilNow() {
+        const [now, setNow] = React.useState<Date | null>(null);
+
+        React.useEffect(() => {
+            // Evita desajustes de hidratación: inicia después del mount
+            setNow(new Date());
+            const id = setInterval(() => setNow(new Date()), 1000);
+            return () => clearInterval(id);
+        }, []);
+
+        if (!now) return { time: "—", date: "" };
+
+        const time = new Intl.DateTimeFormat("es-EC", {
+            timeZone: "America/Guayaquil",
+            hour: "2-digit",
+            minute: "2-digit",
+            second: "2-digit",
+            hour12: false,
+        }).format(now);
+
+        const date = new Intl.DateTimeFormat("es-EC", {
+            timeZone: "America/Guayaquil",
+            weekday: "short",
+            day: "2-digit",
+            month: "short",
+            year: "numeric",
+        }).format(now);
+
+        return { time, date };
+    }
+
+    function GuayaquilClock() {
+        const { time, date } = useGuayaquilNow();
+        return (
+            <div className="text-right leading-tight">
+                <div className="text-xs text-foreground-500 flex items-center gap-1 justify-end">
+                    <Icon icon="solar:clock-circle-bold-duotone" />
+                    <span>Hora actual · Guayaquil</span>
+                </div>
+                <div className="font-semibold tabular-nums">{time}</div>
+                <div className="text-xs text-foreground-500">{date}</div>
+            </div>
+        );
+    }
+
+
     return (
         <div className="space-y-6">
             {/* Header con logo y datos de empresa */}
@@ -363,13 +410,17 @@ export default function GimnasiosPage() {
                     </div>
                 </div>
 
-                <Button
-                    color="primary"
-                    startContent={<Icon icon="solar:add-circle-bold-duotone" />}
-                    onClick={() => setIsNewOpen(true)}
-                >
-                    Nuevo Gimnasio
-                </Button>
+                <div className="flex items-center gap-5">
+                    <GuayaquilClock />
+                    <Button
+                        color="primary"
+                        startContent={<Icon icon="solar:add-circle-bold-duotone" />}
+                        onClick={() => setIsNewOpen(true)}
+                    >
+                        Nuevo Gimnasio
+                    </Button>
+                </div>
+
             </div>
 
             {/* Filtro */}
@@ -451,7 +502,7 @@ export default function GimnasiosPage() {
                                                             {r.correo}
                                                         </span>
                                                     )}
-                                                    
+
                                                 </div>
                                             </div>
                                         </div>
