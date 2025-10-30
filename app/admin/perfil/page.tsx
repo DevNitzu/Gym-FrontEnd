@@ -735,7 +735,7 @@ export default function PerfilPage() {
 
                                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3 sm:gap-4 p-3 sm:p-4 rounded-lg bg-default-100">
                                         <Input
-                                            label="Nombre empresa"
+                                            label="Nombre"
                                             variant="bordered"
                                             value={empresaEdit.nombre}
                                             onValueChange={(v) => setEmpresaField("nombre", v)}
@@ -763,7 +763,7 @@ export default function PerfilPage() {
                                             isRequired
                                         />
                                         <Input
-                                            label="Correo empresa"
+                                            label="Correo"
                                             type="email"
                                             variant="bordered"
                                             value={empresaEdit.correo}
@@ -781,12 +781,7 @@ export default function PerfilPage() {
                                                 Activo
                                             </Switch>
                                         </div>
-                                        <Input
-                                            label="Fecha de creación"
-                                            variant="bordered"
-                                            value={empresaEdit.fecha_creacion ? new Date(empresaEdit.fecha_creacion).toLocaleString() : "—"}
-                                            isReadOnly
-                                        />
+                                        
                                         <div className="hidden md:block" />
                                     </div>
 

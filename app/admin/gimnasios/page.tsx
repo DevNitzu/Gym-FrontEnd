@@ -372,7 +372,7 @@ export default function GimnasiosPage() {
             <div className="text-right leading-tight">
                 <div className="text-xs text-foreground-500 flex items-center gap-1 justify-end">
                     <Icon icon="solar:clock-circle-bold-duotone" />
-                    <span>Hora actual · Guayaquil</span>
+                    <span>Hora actual · EC</span>
                 </div>
                 <div className="font-semibold tabular-nums">{time}</div>
                 <div className="text-xs text-foreground-500">{date}</div>
@@ -395,14 +395,14 @@ export default function GimnasiosPage() {
                                 removeWrapper
                             />
                         ) : (
-                            <span className="text-sm font-semibold">{empresaIniciales}</span>
+                            <span className="text-2xl font-bold text-foreground-500"> {empresaIniciales}</span>
                         )}
                     </div>
                     <div className="min-w-0">
                         <h1 className="text-2xl font-bold truncate">
                             {empresa?.nombre || "Empresa"}
                         </h1>
-                        {(empresa?.correo || empresa?.telefono) && (
+                        {(empresa?.correo && empresa?.telefono) && (
                             <p className="text-sm text-foreground-500 truncate">
                                 {empresa?.correo && <span className="mr-3">{empresa.correo}</span>}
                             </p>

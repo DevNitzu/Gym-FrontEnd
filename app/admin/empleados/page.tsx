@@ -25,7 +25,6 @@ import {
     Avatar,
     useDisclosure,
     Spinner,
-    Link,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
@@ -39,12 +38,23 @@ type ApiEmpleado = {
     correo: string;
     telefono: string;
     id_empresa: number;
-    id_gimnasio: number;
+    id_gimnasio: number | null;
     id_tipo_empleado: number;
     fecha_creacion: string;
     id_empleado: number;
     activo: boolean;
     contrasena?: string;
+};
+
+type ApiGimnasio = {
+    id_gimnasio: number;
+    id_empresa: number;
+    nombre: string;
+    direccion?: string;
+    telefono?: string;
+    correo?: string;
+    activo?: number | boolean;
+    fecha_creacion?: string;
 };
 
 /* ====================== Tipos UI ====================== */
@@ -59,7 +69,7 @@ type EmpleadoUI = {
     cedula: string;
     telefono: string;
     id_empresa: number;
-    id_gimnasio: number;
+    id_gimnasio: number; // seleccionado desde el Select
     rol: RolUI;
     id_tipo_empleado: number;
     activo: boolean;
@@ -102,7 +112,15 @@ function normApiToUI(x: ApiEmpleado): EmpleadoUI {
         fecha_creacion: String(x.fecha_creacion ?? ""),
     };
 }
-function uiToApiCreate(x: EmpleadoUI): Omit<ApiEmpleado, "id_empleado" | "activo"> & { contrasena?: string } {
+
+function toNullableGym(id: number): number | null {
+    return id === 0 ? null : id;
+}
+
+
+function uiToApiCreate(
+    x: EmpleadoUI
+): Omit<ApiEmpleado, "id_empleado" | "activo"> & { contrasena?: string } {
     return {
         nombre: x.nombre,
         apellido: x.apellido,
@@ -110,7 +128,7 @@ function uiToApiCreate(x: EmpleadoUI): Omit<ApiEmpleado, "id_empleado" | "activo
         correo: x.email,
         telefono: x.telefono,
         id_empresa: x.id_empresa,
-        id_gimnasio: x.id_gimnasio,
+        id_gimnasio: toNullableGym(x.id_gimnasio),
         id_tipo_empleado: mapRolToTipo(x.rol),
         fecha_creacion: x.fecha_creacion || new Date().toISOString(),
         contrasena: x.contrasena,
@@ -124,23 +142,37 @@ function uiToApiUpdate(x: EmpleadoUI): Partial<ApiEmpleado> {
         correo: x.email,
         telefono: x.telefono,
         id_empresa: x.id_empresa,
-        id_gimnasio: x.id_gimnasio,
+        id_gimnasio: toNullableGym(x.id_gimnasio),
         id_tipo_empleado: mapRolToTipo(x.rol),
         contrasena: x.contrasena,
         activo: x.activo,
     };
 }
 
-/* ====================== Fetch helper ====================== */
+/* ====================== Session helpers ====================== */
+function getSession() {
+    const token =
+        typeof window !== "undefined" ? localStorage.getItem("auth:token") : null;
+    const empresa =
+        typeof window !== "undefined" ? localStorage.getItem("auth:empresa") : null;
+    return { token: token || "", empresa: empresa || "" };
+}
+
+/* ====================== Fetch helper (con token) ====================== */
 async function apiFetch(path: string, init?: RequestInit) {
-    const token = typeof window !== "undefined" ? localStorage.getItem("auth:token") : null;
+    const { token } = getSession();
     const headers = new Headers(init?.headers || {});
     headers.set("Accept", "application/json");
     if (init?.body && !(init.body instanceof FormData) && !headers.has("Content-Type")) {
         headers.set("Content-Type", "application/json");
     }
     if (token) headers.set("Authorization", `Bearer ${token}`);
-    const res = await fetch(`${API_BASE}${path}`, { ...init, headers, cache: "no-store", mode: "cors" });
+    const res = await fetch(`${API_BASE}${path}`, {
+        ...init,
+        headers,
+        cache: "no-store",
+        mode: "cors",
+    });
     if (!res.ok) {
         let msg = `HTTP ${res.status}`;
         try {
@@ -159,18 +191,47 @@ async function listEmpleados(): Promise<EmpleadoUI[]> {
     if (!Array.isArray(data)) return [];
     return data.map(normApiToUI);
 }
+
 async function createEmpleado(body: EmpleadoUI): Promise<EmpleadoUI> {
     const payload = uiToApiCreate(body);
-    const created = await apiFetch(`/api/v1/empleados`, { method: "POST", body: JSON.stringify(payload) });
+    const created = await apiFetch(`/api/v1/empleados`, {
+        method: "POST",
+        body: JSON.stringify(payload),
+    });
     return normApiToUI(created as ApiEmpleado);
 }
-async function updateEmpleadoApi(id_empleado: number, body: EmpleadoUI): Promise<EmpleadoUI> {
+
+async function updateEmpleadoApi(
+    id_empleado: number,
+    body: EmpleadoUI
+): Promise<EmpleadoUI> {
     const payload = uiToApiUpdate(body);
-    const updated = await apiFetch(`/api/v1/empleados/${id_empleado}`, { method: "PUT", body: JSON.stringify(payload) });
+    const updated = await apiFetch(`/api/v1/empleados/${id_empleado}`, {
+        method: "PUT",
+        body: JSON.stringify(payload),
+    });
     return normApiToUI(updated as ApiEmpleado);
 }
+
 async function deleteEmpleadoApi(id_empleado: number): Promise<void> {
     await apiFetch(`/api/v1/empleados/${id_empleado}`, { method: "DELETE" });
+}
+
+/** NUEVO: Listar gimnasios por empresa (para el Select) */
+async function listGimnasiosByEmpresa(
+    id_empresa: number
+): Promise<Array<{ key: string; label: string; value: number }>> {
+    const data = await apiFetch(`/api/v1/gimnasios/${encodeURIComponent(id_empresa)}`);
+    const list: ApiGimnasio[] = Array.isArray(data)
+        ? data
+        : Array.isArray((data as any)?.items)
+            ? (data as any).items
+            : [];
+    return list.map((g) => ({
+        key: String(g.id_gimnasio),
+        label: g.nombre,
+        value: g.id_gimnasio,
+    }));
 }
 
 /* ====================== Página ====================== */
@@ -184,6 +245,11 @@ export default function EmpleadosPage() {
 
     const [editing, setEditing] = React.useState<EmpleadoUI | null>(null);
     const modal = useDisclosure();
+
+    // NUEVO: lista de gimnasios para selección
+    const [gyms, setGyms] = React.useState<Array<{ key: string; label: string; value: number }>>([]);
+    const [gymsErr, setGymsErr] = React.useState<string | null>(null);
+    const [gymsLoading, setGymsLoading] = React.useState<boolean>(false);
 
     React.useEffect(() => {
         let alive = true;
@@ -201,7 +267,29 @@ export default function EmpleadosPage() {
                 if (alive) setLoading(false);
             }
         })();
-        return () => { alive = false; };
+
+        // carga gyms por empresa
+        (async () => {
+            try {
+                setGymsLoading(true);
+                setGymsErr(null);
+                const { empresa } = getSession();
+                const empresaId = Number(empresa || 0);
+                if (!empresaId) throw new Error("No se encontró id_empresa en la sesión.");
+                const g = await listGimnasiosByEmpresa(empresaId);
+                if (!alive) return;
+                setGyms(g);
+            } catch (e: any) {
+                if (!alive) return;
+                setGymsErr(e?.message || "No se pudieron cargar los gimnasios.");
+            } finally {
+                if (alive) setGymsLoading(false);
+            }
+        })();
+
+        return () => {
+            alive = false;
+        };
     }, []);
 
     const filtrados = React.useMemo(() => {
@@ -218,6 +306,8 @@ export default function EmpleadosPage() {
     }, [q, rows]);
 
     function onNew() {
+        const { empresa } = getSession();
+        const empresaId = Number(empresa || 0);
         setEditing({
             nombres: "",
             nombre: "",
@@ -225,8 +315,8 @@ export default function EmpleadosPage() {
             email: "",
             cedula: "",
             telefono: "",
-            id_empresa: 0,
-            id_gimnasio: 0,
+            id_empresa: empresaId || 0,
+            id_gimnasio: 0, // sin asignación por defecto
             rol: "operario",
             id_tipo_empleado: mapRolToTipo("operario"),
             activo: true,
@@ -252,12 +342,16 @@ export default function EmpleadosPage() {
         }
     }
     async function onToggleActivo(emp: EmpleadoUI, val: boolean) {
-        setRows((prev) => prev.map((e) => (e.id_empleado === emp.id_empleado ? { ...e, activo: val } : e)));
+        setRows((prev) =>
+            prev.map((e) => (e.id_empleado === emp.id_empleado ? { ...e, activo: val } : e))
+        );
         try {
             if (!emp.id_empleado) throw new Error("Sin id_empleado.");
             await updateEmpleadoApi(emp.id_empleado, { ...emp, activo: val });
         } catch (e: any) {
-            setRows((prev) => prev.map((e) => (e.id_empleado === emp.id_empleado ? { ...e, activo: !val } : e)));
+            setRows((prev) =>
+                prev.map((e) => (e.id_empleado === emp.id_empleado ? { ...e, activo: !val } : e))
+            );
             setNotif(e?.message || "No se pudo cambiar estado.");
         }
     }
@@ -374,7 +468,12 @@ export default function EmpleadosPage() {
                                                 <Button size="sm" variant="light" onPress={() => onEdit(e)}>
                                                     <Icon icon="mdi:pencil" width={18} height={18} />
                                                 </Button>
-                                                <Button size="sm" color="danger" variant="light" onPress={() => onDelete(e.id_empleado)}>
+                                                <Button
+                                                    size="sm"
+                                                    color="danger"
+                                                    variant="light"
+                                                    onPress={() => onDelete(e.id_empleado)}
+                                                >
                                                     <Icon icon="mdi:trash-can" width={18} height={18} />
                                                 </Button>
                                             </div>
@@ -399,22 +498,35 @@ export default function EmpleadosPage() {
                                             <TableRow key={e.id_empleado}>
                                                 <TableCell>
                                                     <div className="flex items-center gap-3">
-                                                        <Avatar isBordered radius="full" size="sm" src={e.avatarUrl} name={e.nombres} />
+                                                        <Avatar
+                                                            isBordered
+                                                            radius="full"
+                                                            size="sm"
+                                                            src={e.avatarUrl}
+                                                            name={e.nombres}
+                                                        />
                                                         <div className="flex flex-col">
                                                             <span className="font-medium">{e.nombres}</span>
-                                                            <span className="text-xs text-default-500">ID: {e.id_empleado}</span>
-                                                            {e.telefono ? <span className="text-xs text-default-500">{e.telefono}</span> : null}
+                                                            {e.telefono ? (
+                                                                <span className="text-xs text-default-500">{e.telefono}</span>
+                                                            ) : null}
                                                         </div>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>{e.cedula}</TableCell>
                                                 <TableCell className="break-words">{e.email}</TableCell>
                                                 <TableCell className="capitalize">
-                                                    <Chip size="sm" variant="flat">{e.rol}</Chip>
+                                                    <Chip size="sm" variant="flat">
+                                                        {e.rol}
+                                                    </Chip>
                                                 </TableCell>
                                                 <TableCell>
                                                     <div className="flex items-center gap-2">
-                                                        <Chip color={e.activo ? "success" : "default"} size="sm" variant="flat">
+                                                        <Chip
+                                                            color={e.activo ? "success" : "default"}
+                                                            size="sm"
+                                                            variant="flat"
+                                                        >
                                                             {e.activo ? "Activo" : "Inactivo"}
                                                         </Chip>
                                                         <Switch
@@ -429,7 +541,12 @@ export default function EmpleadosPage() {
                                                         <Button size="sm" variant="light" onPress={() => onEdit(e)}>
                                                             <Icon icon="mdi:pencil" width={18} height={18} />
                                                         </Button>
-                                                        <Button size="sm" color="danger" variant="light" onPress={() => onDelete(e.id_empleado)}>
+                                                        <Button
+                                                            size="sm"
+                                                            color="danger"
+                                                            variant="light"
+                                                            onPress={() => onDelete(e.id_empleado)}
+                                                        >
                                                             <Icon icon="mdi:trash-can" width={18} height={18} />
                                                         </Button>
                                                     </div>
@@ -451,6 +568,9 @@ export default function EmpleadosPage() {
                 setData={setEditing}
                 onSave={onSave}
                 saving={saving}
+                gyms={gyms}
+                gymsLoading={gymsLoading}
+                gymsErr={gymsErr}
             />
         </div>
     );
@@ -464,6 +584,9 @@ function EmpleadoModal({
     setData,
     onSave,
     saving,
+    gyms,
+    gymsLoading,
+    gymsErr,
 }: {
     isOpen: boolean;
     onOpenChange: (v: boolean) => void;
@@ -471,11 +594,22 @@ function EmpleadoModal({
     setData: React.Dispatch<React.SetStateAction<EmpleadoUI | null>>;
     onSave: () => void;
     saving: boolean;
+    /** NUEVO: lista de gimnasios para asignación */
+    gyms: Array<{ key: string; label: string; value: number }>;
+    gymsLoading: boolean;
+    gymsErr: string | null;
 }) {
     if (!data) return null;
 
+    // Para el Select de Rol (estático, sin map → no hay problema de typing)
+    const ROL_ITEMS: Array<{ key: RolUI; label: string }> = [
+        { key: "operario", label: "Operario" },
+        { key: "vendedor", label: "Vendedor" },
+        { key: "administrador", label: "Administrador" },
+    ];
+
     return (
-        <Modal isOpen={isOpen} onOpenChange={onOpenChange} placement="center" size="lg">
+        <Modal isOpen={isOpen} onOpenChange={onOpenChange} isDismissable={false} isKeyboardDismissDisabled placement="center" size="lg">
             <ModalContent>
                 {(onClose) => (
                     <>
@@ -489,14 +623,18 @@ function EmpleadoModal({
                                     label="Nombre"
                                     variant="bordered"
                                     value={data.nombre}
-                                    onValueChange={(v) => setData((p) => (p ? { ...p, nombre: v, nombres: `${v} ${p.apellido}`.trim() } : p))}
+                                    onValueChange={(v) =>
+                                        setData((p) => (p ? { ...p, nombre: v, nombres: `${v} ${p.apellido}`.trim() } : p))
+                                    }
                                     isRequired
                                 />
                                 <Input
                                     label="Apellido"
                                     variant="bordered"
                                     value={data.apellido}
-                                    onValueChange={(v) => setData((p) => (p ? { ...p, apellido: v, nombres: `${p.nombre} ${v}`.trim() } : p))}
+                                    onValueChange={(v) =>
+                                        setData((p) => (p ? { ...p, apellido: v, nombres: `${p?.nombre ?? ""} ${v}`.trim() } : p))
+                                    }
                                     isRequired
                                 />
                                 <Input
@@ -520,34 +658,40 @@ function EmpleadoModal({
                                     value={data.telefono}
                                     onValueChange={(v) => setData((p) => (p ? { ...p, telefono: v } : p))}
                                 />
-                                <Input
-                                    label="ID Empresa"
-                                    type="number"
-                                    variant="bordered"
-                                    value={String(data.id_empresa ?? 0)}
-                                    onValueChange={(v) => setData((p) => (p ? { ...p, id_empresa: Number(v) || 0 } : p))}
-                                />
-                                <Input
-                                    label="ID Gimnasio"
-                                    type="number"
-                                    variant="bordered"
-                                    value={String(data.id_gimnasio ?? 0)}
-                                    onValueChange={(v) => setData((p) => (p ? { ...p, id_gimnasio: Number(v) || 0 } : p))}
-                                />
+
+                                {/* Select de Gimnasio (con opción Sin asignación) */}
+                                <Select
+                                    label="Asignar a gimnasio"
+                                    placeholder={gymsLoading ? "Cargando gimnasios…" : "Selecciona un gimnasio"}
+                                    selectedKeys={new Set([String(data.id_gimnasio ?? 0)])}
+                                    items={[{ key: "0", label: "Sin asignación", value: 0 }, ...gyms]}
+                                    onSelectionChange={(keys) => {
+                                        const k = Array.from(keys)[0] as string;
+                                        const selected = gyms.find((g) => g.key === k);
+                                        const value = selected ? selected.value : Number(k) || 0; // 0 = sin asignación
+                                        setData((p) => (p ? { ...p, id_gimnasio: value } : p));
+                                    }}
+                                    isDisabled={gymsLoading}
+                                >
+                                    {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
+                                </Select>
+                                {/* ID Empresa (autocompletado desde sesión, editable por si acaso) */}
+                                {/* Rol */}
                                 <Select
                                     label="Rol"
                                     variant="bordered"
-                                    selectedKeys={[data.rol]}
+                                    selectedKeys={new Set([data.rol])}
                                     onSelectionChange={(keys) => {
-                                        const key = Array.from(keys)[0] as RolUI;
+                                        const key = (Array.from(keys)[0] as RolUI) || "operario";
                                         setData((p) => (p ? { ...p, rol: key, id_tipo_empleado: mapRolToTipo(key) } : p));
                                     }}
                                 >
-                                    <SelectItem key="operario">Operario</SelectItem>
-                                    <SelectItem key="vendedor">Vendedor</SelectItem>
-                                    <SelectItem key="administrador">Administrador</SelectItem>
+                                    {ROL_ITEMS.map((r) => (
+                                        <SelectItem key={r.key}>{r.label}</SelectItem>
+                                    ))}
                                 </Select>
 
+                                {/* Contraseña solo al crear */}
                                 {!data.id_empleado && (
                                     <Input
                                         label="Contraseña (solo al crear)"
@@ -569,11 +713,6 @@ function EmpleadoModal({
                                         Activo
                                     </Switch>
                                 </div>
-                                {data.id_empleado ? (
-                                    <Chip size="sm" variant="flat">
-                                        ID: {data.id_empleado}
-                                    </Chip>
-                                ) : null}
                             </div>
                         </ModalBody>
                         <ModalFooter>

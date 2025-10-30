@@ -360,9 +360,9 @@ export default function ClientesPage() {
                                                     <Avatar isBordered radius="full" size="sm" name={`${c.nombres} ${c.apellidos}`} />
                                                     <div className="flex flex-col">
                                                         <span className="font-medium">{c.nombres} {c.apellidos}</span>
-                                                        <span className="text-xs text-default-500">ID: {c.id_cliente} • C.I.: {c.cedula || "—"}</span>
+                                                        <span className="text-xs text-default-500">{c.cedula || "—"}</span>
                                                     </div>
-                                                </div>
+                                                </div> 
                                             </TableCell>
 
                                             <TableCell>
