@@ -169,12 +169,58 @@ export async function apiDeleteMembresia(id: number) {
     if (!res.ok) throw new Error(`HTTP ${res.status} al eliminar membresía`);
 }
 
-/* Empleados por gimnasio */
+/* Empleados por gimnasio — consume DTO y mapea a ApiEmpleado */
 export async function apiListEmpleadosByGimnasio(id_gimnasio: number): Promise<ApiEmpleado[]> {
-    const res = await authFetch(`${API_BASE}/api/v1/empleados/gimnasio/${encodeURIComponent(id_gimnasio)}`, {
-        headers: buildAuthHeaders(),
-    });
+    const url = `${API_BASE}/api/v1/empleadodto/gimnasio/${encodeURIComponent(id_gimnasio)}`;
+    const res = await authFetch(url, { headers: buildAuthHeaders() });
+
     if (!res.ok) throw new Error(`HTTP ${res.status} al listar empleados del gimnasio`);
+
     const json = await res.json();
-    return Array.isArray(json) ? json : [];
+    const rows = Array.isArray(json?.data) ? json.data : [];
+
+    // Mapea cada DTO a tu shape ApiEmpleado (inyectando asignación activa)
+    const list: ApiEmpleado[] = rows.map((row: any) => {
+        const emp = row?.empleado ?? {};
+        const asignaciones: any[] = Array.isArray(row?.asignaciones) ? row.asignaciones : [];
+        const asign = asignaciones.find(a => a?.activo) ?? asignaciones[0] ?? null;
+
+        return {
+            // Campos base del empleado
+            id_empleado: emp?.id_empleado ?? 0,
+            nombre: emp?.nombre ?? "",
+            apellido: emp?.apellido ?? "",
+            cedula: emp?.cedula ?? "",
+            correo: emp?.correo ?? "",
+            telefono: emp?.telefono ?? "",
+            fecha_creacion: emp?.fecha_creacion ?? "",
+            activo: Boolean(emp?.activo),
+
+            // Estos dos son importantes para tu UI: los rellenamos desde la asignación
+            id_empresa: asign?.id_empresa ?? 0,
+            id_gimnasio: asign?.id_gimnasio ?? 0,
+
+            // Si tu tipo ApiEmpleado tiene más campos opcionales, puedes mantenerlos aquí:
+            // id_tipo_empleado: asign?.id_tipo_empleado ?? undefined,
+            // ...otros opcionales
+        } as ApiEmpleado;
+    });
+
+    // Filtrado defensivo (el endpoint ya filtra, pero por si algo viene mal)
+    return list.filter(e => (e.id_gimnasio ?? 0) === Number(id_gimnasio));
+}
+
+// lib/api.ts
+export async function apiListMembresiasIdsByGym(id_gimnasio: number): Promise<number[]> {
+    const res = await authFetch(
+        `${API_BASE}/api/v1/membresias/gimnasio/${encodeURIComponent(id_gimnasio)}`,
+        { headers: buildAuthHeaders() }
+    );
+    if (!res.ok) throw new Error(`HTTP ${res.status} al listar ventas`);
+    const json = await res.json();
+    if (!Array.isArray(json)) return [];
+    // Asumiendo que el backend devuelve objetos con id_membresia
+    return json
+        .map((x: any) => Number(x?.id_membresia))
+        .filter((n: number) => Number.isFinite(n));
 }

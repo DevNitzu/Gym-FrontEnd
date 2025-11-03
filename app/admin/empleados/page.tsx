@@ -15,7 +15,6 @@ import {
     ModalHeader,
     Select,
     SelectItem,
-    Switch,
     Table,
     TableBody,
     TableCell,
@@ -26,9 +25,12 @@ import {
     useDisclosure,
     Spinner,
 } from "@heroui/react";
+import type { Selection } from "@heroui/react";
 import { Icon } from "@iconify/react";
 
+/* ====================== Constantes ====================== */
 const API_BASE = process.env.NEXT_PUBLIC_API_BASE || "http://localhost:8000";
+const DEFAULT_TIPO = 2; // 🔴 id_tipo_empleado por defecto = 2
 
 /* ====================== Tipos API ====================== */
 type ApiEmpleado = {
@@ -57,6 +59,39 @@ type ApiGimnasio = {
     fecha_creacion?: string;
 };
 
+type EmpleadoDTO = {
+    empleado: {
+        nombre: string;
+        apellido: string;
+        cedula: string;
+        correo: string;
+        telefono: string;
+        fecha_creacion: string;
+        id_empleado: number;
+        activo: boolean;
+    };
+    asignaciones: Array<{
+        id_empleado_asignacion?: number;
+        id_empresa: number;
+        nombre_empresa?: string;
+        id_gimnasio: number;
+        nombre_gimnasio?: string;
+        id_tipo_empleado: number;
+        tipo_empleado_nombre?: string;
+        activo: boolean;
+    }>;
+};
+
+type ApiEmpleadoAsignacion = {
+    id_empresa: number;
+    id_gimnasio: number;
+    id_empleado: number;
+    id_tipo_empleado: number;
+    fecha_asignacion?: string;
+    id_empleado_asignacion?: number;
+    activo?: boolean;
+};
+
 /* ====================== Tipos UI ====================== */
 type RolUI = "operario" | "vendedor" | "administrador";
 
@@ -69,14 +104,17 @@ type EmpleadoUI = {
     cedula: string;
     telefono: string;
     id_empresa: number;
-    id_gimnasio: number; // seleccionado desde el Select
+    id_gimnasio: number; // 0 = sin asignación (interno)
     rol: RolUI;
     id_tipo_empleado: number;
     activo: boolean;
     avatarUrl?: string;
     fecha_creacion?: string;
     contrasena?: string;
+    id_empleado_asignacion: number; // para escenarios legacy
 };
+
+type GymOption = { key: string; label: string; value: number };
 
 /* ====================== Utils ====================== */
 function toBool(v: any): boolean {
@@ -89,13 +127,14 @@ function mapTipoToRol(tipo: number): RolUI {
     if (tipo === 2) return "vendedor";
     return "operario";
 }
-function mapRolToTipo(rol: RolUI): number {
-    if (rol === "administrador") return 1;
-    if (rol === "vendedor") return 2;
-    return 3;
+function toNullableGym(id: number): number | null {
+    return id === 0 ? null : id;
 }
+
+/** Normaliza desde ApiEmpleado (CRUD directo) a UI */
 function normApiToUI(x: ApiEmpleado): EmpleadoUI {
-    const rol = mapTipoToRol(Number(x.id_tipo_empleado));
+    const tipo = Number(x.id_tipo_empleado ?? DEFAULT_TIPO);
+    const rol = mapTipoToRol(tipo);
     return {
         id_empleado: Number(x.id_empleado),
         nombres: `${x.nombre ?? ""} ${x.apellido ?? ""}`.trim(),
@@ -107,45 +146,42 @@ function normApiToUI(x: ApiEmpleado): EmpleadoUI {
         id_empresa: Number(x.id_empresa ?? 0),
         id_gimnasio: Number(x.id_gimnasio ?? 0),
         rol,
-        id_tipo_empleado: Number(x.id_tipo_empleado ?? mapRolToTipo(rol)),
+        id_tipo_empleado: tipo,
         activo: toBool(x.activo),
         fecha_creacion: String(x.fecha_creacion ?? ""),
+        contrasena: undefined,
+        id_empleado_asignacion: 0,
     };
 }
 
-function toNullableGym(id: number): number | null {
-    return id === 0 ? null : id;
-}
+/** Normaliza desde EmpleadoDTO (endpoint empleadoDTO/empresa/{id}) a UI */
+function normDtoToUI(dto: EmpleadoDTO, fallbackEmpresaId: number): EmpleadoUI {
+    const e = dto.empleado || ({} as EmpleadoDTO["empleado"]);
+    // Tomamos la PRIMERA asignación activa (si existe) para id_gimnasio e id_tipo_empleado
+    const asignActiva =
+        (dto.asignaciones || []).find((a) => toBool(a.activo)) ||
+        (dto.asignaciones || [])[0];
 
+    const id_gimnasio = Number(asignActiva?.id_gimnasio ?? 0);
+    const tipo = Number(asignActiva?.id_tipo_empleado ?? DEFAULT_TIPO);
+    const rol = mapTipoToRol(tipo);
 
-function uiToApiCreate(
-    x: EmpleadoUI
-): Omit<ApiEmpleado, "id_empleado" | "activo"> & { contrasena?: string } {
     return {
-        nombre: x.nombre,
-        apellido: x.apellido,
-        cedula: x.cedula,
-        correo: x.email,
-        telefono: x.telefono,
-        id_empresa: x.id_empresa,
-        id_gimnasio: toNullableGym(x.id_gimnasio),
-        id_tipo_empleado: mapRolToTipo(x.rol),
-        fecha_creacion: x.fecha_creacion || new Date().toISOString(),
-        contrasena: x.contrasena,
-    };
-}
-function uiToApiUpdate(x: EmpleadoUI): Partial<ApiEmpleado> {
-    return {
-        nombre: x.nombre,
-        apellido: x.apellido,
-        cedula: x.cedula,
-        correo: x.email,
-        telefono: x.telefono,
-        id_empresa: x.id_empresa,
-        id_gimnasio: toNullableGym(x.id_gimnasio),
-        id_tipo_empleado: mapRolToTipo(x.rol),
-        contrasena: x.contrasena,
-        activo: x.activo,
+        id_empleado: Number(e.id_empleado ?? 0),
+        nombres: `${e.nombre ?? ""} ${e.apellido ?? ""}`.trim(),
+        nombre: String(e.nombre ?? ""),
+        apellido: String(e.apellido ?? ""),
+        email: String(e.correo ?? ""),
+        cedula: String(e.cedula ?? ""),
+        telefono: String(e.telefono ?? ""),
+        id_empresa: Number(asignActiva?.id_empresa ?? fallbackEmpresaId ?? 0),
+        id_gimnasio,
+        rol,
+        id_tipo_empleado: tipo,
+        activo: toBool(e.activo),
+        fecha_creacion: String(e.fecha_creacion ?? ""),
+        contrasena: undefined,
+        id_empleado_asignacion: Number(asignActiva?.id_empleado_asignacion ?? 0),
     };
 }
 
@@ -167,12 +203,14 @@ async function apiFetch(path: string, init?: RequestInit) {
         headers.set("Content-Type", "application/json");
     }
     if (token) headers.set("Authorization", `Bearer ${token}`);
+
     const res = await fetch(`${API_BASE}${path}`, {
         ...init,
         headers,
         cache: "no-store",
         mode: "cors",
     });
+
     if (!res.ok) {
         let msg = `HTTP ${res.status}`;
         try {
@@ -185,15 +223,30 @@ async function apiFetch(path: string, init?: RequestInit) {
     return res.json();
 }
 
-/* ====================== API calls ====================== */
-async function listEmpleados(): Promise<EmpleadoUI[]> {
-    const data = await apiFetch(`/api/v1/empleados`);
-    if (!Array.isArray(data)) return [];
-    return data.map(normApiToUI);
+/* ====================== API Empleados ====================== */
+/** Usa GET /api/v1/empleadodto/empresa/{id_empresa} (retorna { data: EmpleadoDTO[] }) */
+async function listEmpleadosByEmpresaDTO(id_empresa: number): Promise<EmpleadoUI[]> {
+    const json = await apiFetch(
+        `/api/v1/empleadodto/empresa/${encodeURIComponent(id_empresa)}`
+    );
+    const arr: EmpleadoDTO[] = Array.isArray(json?.data) ? json.data : [];
+    return arr.map((dto) => normDtoToUI(dto, id_empresa));
 }
 
+/** CRUD directo para crear/actualizar/eliminar (si tu backend lo soporta) */
 async function createEmpleado(body: EmpleadoUI): Promise<EmpleadoUI> {
-    const payload = uiToApiCreate(body);
+    const payload: Omit<ApiEmpleado, "id_empleado" | "activo"> & { contrasena?: string } = {
+        nombre: body.nombre,
+        apellido: body.apellido,
+        cedula: body.cedula,
+        correo: body.email,
+        telefono: body.telefono,
+        id_empresa: body.id_empresa,
+        id_gimnasio: toNullableGym(body.id_gimnasio),
+        id_tipo_empleado: Number(body.id_tipo_empleado ?? DEFAULT_TIPO),
+        fecha_creacion: body.fecha_creacion || new Date().toISOString(),
+        contrasena: body.contrasena,
+    };
     const created = await apiFetch(`/api/v1/empleados`, {
         method: "POST",
         body: JSON.stringify(payload),
@@ -205,7 +258,18 @@ async function updateEmpleadoApi(
     id_empleado: number,
     body: EmpleadoUI
 ): Promise<EmpleadoUI> {
-    const payload = uiToApiUpdate(body);
+    const payload: Partial<ApiEmpleado> = {
+        nombre: body.nombre,
+        apellido: body.apellido,
+        cedula: body.cedula,
+        correo: body.email,
+        telefono: body.telefono,
+        id_empresa: body.id_empresa,
+        id_gimnasio: toNullableGym(body.id_gimnasio),
+        id_tipo_empleado: Number(body.id_tipo_empleado ?? DEFAULT_TIPO),
+        contrasena: body.contrasena,
+        activo: body.activo,
+    };
     const updated = await apiFetch(`/api/v1/empleados/${id_empleado}`, {
         method: "PUT",
         body: JSON.stringify(payload),
@@ -217,11 +281,13 @@ async function deleteEmpleadoApi(id_empleado: number): Promise<void> {
     await apiFetch(`/api/v1/empleados/${id_empleado}`, { method: "DELETE" });
 }
 
-/** NUEVO: Listar gimnasios por empresa (para el Select) */
+/* ====================== API Gimnasios ====================== */
 async function listGimnasiosByEmpresa(
     id_empresa: number
-): Promise<Array<{ key: string; label: string; value: number }>> {
-    const data = await apiFetch(`/api/v1/gimnasios/${encodeURIComponent(id_empresa)}`);
+): Promise<GymOption[]> {
+    const data = await apiFetch(
+        `/api/v1/gimnasios/${encodeURIComponent(id_empresa)}`
+    );
     const list: ApiGimnasio[] = Array.isArray(data)
         ? data
         : Array.isArray((data as any)?.items)
@@ -234,6 +300,54 @@ async function listGimnasiosByEmpresa(
     }));
 }
 
+/* ====================== API Empleado DTO & Asignaciones ====================== */
+async function fetchEmpleadoDTO(
+    id_empleado: number
+): Promise<EmpleadoDTO | null> {
+    const dto = await apiFetch(`/api/v1/empleadodto/empleado/${id_empleado}`);
+    if (!dto || !dto.empleado) return null;
+    return dto as EmpleadoDTO;
+}
+
+async function createEmpleadoAsignacion(
+    body: ApiEmpleadoAsignacion
+): Promise<ApiEmpleadoAsignacion> {
+    return apiFetch(`/api/v1/empleado_asignacion`, {
+        method: "POST",
+        body: JSON.stringify({
+            id_empresa: body.id_empresa,
+            id_gimnasio: body.id_gimnasio,
+            id_empleado: body.id_empleado,
+            id_tipo_empleado: Number(body.id_tipo_empleado ?? DEFAULT_TIPO), // 🔴 default 2
+            fecha_asignacion: body.fecha_asignacion ?? new Date().toISOString(),
+        }),
+    });
+}
+
+async function updateEmpleadoAsignacion(
+    id_empleado_asignacion: number,
+    body: Pick<
+        ApiEmpleadoAsignacion,
+        "id_empresa" | "id_gimnasio" | "id_empleado" | "id_tipo_empleado"
+    >
+): Promise<ApiEmpleadoAsignacion> {
+    return apiFetch(`/api/v1/empleado_asignacion/${id_empleado_asignacion}`, {
+        method: "PUT",
+        body: JSON.stringify({
+            ...body,
+            id_tipo_empleado: Number(body.id_tipo_empleado ?? DEFAULT_TIPO), // 🔴 default 2
+        }),
+    });
+}
+
+async function deleteEmpleadoAsignacion(
+    id_empleado_asignacion: number
+): Promise<void> {
+    await apiFetch(`/api/v1/empleado_asignacion/${id_empleado_asignacion}`, {
+        method: "DELETE",
+    });
+}
+
 /* ====================== Página ====================== */
 export default function EmpleadosPage() {
     const [rows, setRows] = React.useState<EmpleadoUI[]>([]);
@@ -244,20 +358,28 @@ export default function EmpleadosPage() {
     const [notif, setNotif] = React.useState<string | null>(null);
 
     const [editing, setEditing] = React.useState<EmpleadoUI | null>(null);
-    const modal = useDisclosure();
+    const modalEmpleado = useDisclosure();
 
-    // NUEVO: lista de gimnasios para selección
-    const [gyms, setGyms] = React.useState<Array<{ key: string; label: string; value: number }>>([]);
+    // Modal de Asignaciones
+    const [asigEmpleado, setAsigEmpleado] = React.useState<EmpleadoUI | null>(null);
+    const modalAsig = useDisclosure();
+
+    // Gimnasios
+    const [gyms, setGyms] = React.useState<GymOption[]>([]);
     const [gymsErr, setGymsErr] = React.useState<string | null>(null);
     const [gymsLoading, setGymsLoading] = React.useState<boolean>(false);
 
     React.useEffect(() => {
         let alive = true;
+
         (async () => {
             try {
                 setLoading(true);
                 setErr(null);
-                const all = await listEmpleados();
+                const { empresa } = getSession();
+                const empresaId = Number(empresa || 0);
+                if (!empresaId) throw new Error("No se encontró id_empresa en la sesión.");
+                const all = await listEmpleadosByEmpresaDTO(empresaId);
                 if (!alive) return;
                 setRows(all);
             } catch (e: any) {
@@ -268,7 +390,6 @@ export default function EmpleadosPage() {
             }
         })();
 
-        // carga gyms por empresa
         (async () => {
             try {
                 setGymsLoading(true);
@@ -299,7 +420,6 @@ export default function EmpleadosPage() {
             (e) =>
                 e.nombres.toLowerCase().includes(s) ||
                 e.email.toLowerCase().includes(s) ||
-                e.rol.toLowerCase().includes(s) ||
                 e.cedula.toLowerCase().includes(s) ||
                 String(e.id_empleado ?? "").toLowerCase().includes(s)
         );
@@ -308,6 +428,7 @@ export default function EmpleadosPage() {
     function onNew() {
         const { empresa } = getSession();
         const empresaId = Number(empresa || 0);
+        const tipoDefault = DEFAULT_TIPO; // 2
         setEditing({
             nombres: "",
             nombre: "",
@@ -316,19 +437,32 @@ export default function EmpleadosPage() {
             cedula: "",
             telefono: "",
             id_empresa: empresaId || 0,
-            id_gimnasio: 0, // sin asignación por defecto
-            rol: "operario",
-            id_tipo_empleado: mapRolToTipo("operario"),
+            id_gimnasio: 0,
+            rol: mapTipoToRol(tipoDefault), // "vendedor"
+            id_tipo_empleado: tipoDefault, // 🔴 2
             activo: true,
             contrasena: "",
             fecha_creacion: new Date().toISOString(),
+            id_empleado_asignacion: 0,
         });
-        modal.onOpen();
+        modalEmpleado.onOpen();
     }
-    function onEdit(emp: EmpleadoUI) {
-        setEditing({ ...emp });
-        modal.onOpen();
+
+    function openAsignaciones(emp: EmpleadoUI) {
+        setAsigEmpleado(emp);
+        modalAsig.onOpen();
     }
+
+    async function onEdit(emp: EmpleadoUI) {
+        setEditing({
+            ...emp,
+            id_empleado_asignacion: emp.id_empleado_asignacion ?? 0,
+            id_tipo_empleado: Number(emp.id_tipo_empleado ?? DEFAULT_TIPO),
+            rol: mapTipoToRol(Number(emp.id_tipo_empleado ?? DEFAULT_TIPO)),
+        });
+        modalEmpleado.onOpen();
+    }
+
     async function onDelete(id_empleado?: number) {
         if (!id_empleado) return;
         const ok = confirm("¿Eliminar este empleado?");
@@ -341,24 +475,15 @@ export default function EmpleadosPage() {
             setNotif(e?.message || "No se pudo eliminar.");
         }
     }
-    async function onToggleActivo(emp: EmpleadoUI, val: boolean) {
-        setRows((prev) =>
-            prev.map((e) => (e.id_empleado === emp.id_empleado ? { ...e, activo: val } : e))
-        );
-        try {
-            if (!emp.id_empleado) throw new Error("Sin id_empleado.");
-            await updateEmpleadoApi(emp.id_empleado, { ...emp, activo: val });
-        } catch (e: any) {
-            setRows((prev) =>
-                prev.map((e) => (e.id_empleado === emp.id_empleado ? { ...e, activo: !val } : e))
-            );
-            setNotif(e?.message || "No se pudo cambiar estado.");
-        }
-    }
 
-    async function onSave() {
+    async function onSaveEmpleado() {
         if (!editing) return;
-        if (!editing.nombre.trim() || !editing.apellido.trim() || !editing.email.trim() || !editing.cedula.trim()) {
+        if (
+            !editing.nombre.trim() ||
+            !editing.apellido.trim() ||
+            !editing.email.trim() ||
+            !editing.cedula.trim()
+        ) {
             setNotif("Completa: nombre, apellido, correo y cédula.");
             return;
         }
@@ -366,19 +491,34 @@ export default function EmpleadosPage() {
             setNotif("Para crear, define una contraseña.");
             return;
         }
+
+        // 🔴 Asegurar default en memoria antes de enviar
+        if (!editing.id_tipo_empleado) {
+            setEditing((p) => (p ? { ...p, id_tipo_empleado: DEFAULT_TIPO } : p));
+        }
+
         setSaving(true);
         setNotif(null);
+
         try {
             if (editing.id_empleado) {
-                const saved = await updateEmpleadoApi(editing.id_empleado, editing);
-                setRows((prev) => prev.map((e) => (e.id_empleado === saved.id_empleado ? saved : e)));
+                const saved = await updateEmpleadoApi(editing.id_empleado, {
+                    ...editing,
+                    id_tipo_empleado: Number(editing.id_tipo_empleado ?? DEFAULT_TIPO),
+                });
+                setRows((prev) =>
+                    prev.map((e) => (e.id_empleado === saved.id_empleado ? saved : e))
+                );
                 setNotif("Empleado actualizado.");
             } else {
-                const created = await createEmpleado(editing);
+                const created = await createEmpleado({
+                    ...editing,
+                    id_tipo_empleado: Number(editing.id_tipo_empleado ?? DEFAULT_TIPO),
+                });
                 setRows((prev) => [created, ...prev]);
                 setNotif("Empleado creado.");
             }
-            modal.onClose();
+            modalEmpleado.onClose();
         } catch (e: any) {
             setNotif(e?.message || "No se pudo guardar.");
         } finally {
@@ -388,13 +528,13 @@ export default function EmpleadosPage() {
 
     return (
         <div className="space-y-6">
-            {/* Header responsivo */}
+            {/* Header */}
             <div className="flex flex-wrap items-center justify-between gap-3">
                 <h1 className="text-2xl font-bold">Empleados</h1>
                 <div className="flex w-full sm:w-auto flex-wrap items-center gap-2">
                     <Input
                         aria-label="Buscar empleados"
-                        placeholder="Buscar por nombre, correo, rol, cédula…"
+                        placeholder="Buscar por nombre, correo, cédula…"
                         variant="bordered"
                         value={q}
                         onValueChange={setQ}
@@ -413,7 +553,10 @@ export default function EmpleadosPage() {
             </div>
 
             {!!notif && (
-                <Chip color={notif.includes("No se pudo") ? "warning" : "success"} variant="flat">
+                <Chip
+                    color={notif.includes("No se pudo") ? "warning" : "success"}
+                    variant="flat"
+                >
                     {notif}
                 </Chip>
             )}
@@ -429,68 +572,77 @@ export default function EmpleadosPage() {
                         <div className="text-center text-warning-600">{err}</div>
                     ) : (
                         <>
-                            {/* ===== Vista móvil (cards) ===== */}
+                            {/* Mobile (cards) */}
                             <div className="sm:hidden space-y-3">
                                 {filtrados.length === 0 && (
-                                    <div className="text-center text-default-500 py-8">Sin resultados</div>
+                                    <div className="text-center text-default-500 py-8">
+                                        Sin resultados
+                                    </div>
                                 )}
 
                                 {filtrados.map((e) => (
                                     <div key={e.id_empleado} className="rounded-xl border p-3">
                                         <div className="flex items-start gap-3">
-                                            <Avatar isBordered radius="full" size="sm" src={e.avatarUrl} name={e.nombres} />
+                                            <Avatar
+                                                isBordered
+                                                radius="full"
+                                                size="sm"
+                                                src={e.avatarUrl}
+                                                name={e.nombres}
+                                            />
                                             <div className="flex-1 min-w-0">
                                                 <div className="flex items-center justify-between gap-2">
                                                     <div className="font-medium truncate">{e.nombres}</div>
-                                                    <Chip size="sm" variant="flat" color={e.activo ? "success" : "default"}>
-                                                        {e.activo ? "Activo" : "Inactivo"}
-                                                    </Chip>
                                                 </div>
-                                                <div className="text-xs text-default-500 mt-1">ID: {e.id_empleado}</div>
+                                                <div className="text-xs text-default-500 mt-1">
+                                                    ID: {e.id_empleado}
+                                                </div>
                                                 <div className="mt-2 grid grid-cols-1 gap-1 text-sm">
                                                     <span className="break-words">{e.email}</span>
-                                                    <span className="text-default-500">C.I.: {e.cedula || "—"}</span>
-                                                    {e.telefono && <span className="text-default-500">{e.telefono}</span>}
-                                                    <span className="capitalize">Rol: {e.rol}</span>
+                                                    <span className="text-default-500">
+                                                        C.I.: {e.cedula || "—"}
+                                                    </span>
+                                                    {e.telefono && (
+                                                        <span className="text-default-500">{e.telefono}</span>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
 
-                                        <div className="mt-3 flex items-center justify-between">
-                                            <Switch
-                                                aria-label={`Cambiar estado de ${e.nombres}`}
-                                                isSelected={e.activo}
-                                                onValueChange={(v) => onToggleActivo(e, v)}
+                                        <div className="mt-3 flex items-center justify-end gap-2">
+                                            <Button size="sm" variant="light" onPress={() => onEdit(e)}>
+                                                <Icon icon="mdi:pencil" width={18} height={18} />
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                variant="flat"
+                                                onPress={() => openAsignaciones(e)}
+                                                startContent={
+                                                    <Icon icon="solar:map-point-bold-duotone" />
+                                                }
                                             >
-                                                Activo
-                                            </Switch>
-                                            <div className="flex gap-2">
-                                                <Button size="sm" variant="light" onPress={() => onEdit(e)}>
-                                                    <Icon icon="mdi:pencil" width={18} height={18} />
-                                                </Button>
-                                                <Button
-                                                    size="sm"
-                                                    color="danger"
-                                                    variant="light"
-                                                    onPress={() => onDelete(e.id_empleado)}
-                                                >
-                                                    <Icon icon="mdi:trash-can" width={18} height={18} />
-                                                </Button>
-                                            </div>
+                                                Asignaciones
+                                            </Button>
+                                            <Button
+                                                size="sm"
+                                                color="danger"
+                                                variant="light"
+                                                onPress={() => onDelete(e.id_empleado)}
+                                            >
+                                                <Icon icon="mdi:trash-can" width={18} height={18} />
+                                            </Button>
                                         </div>
                                     </div>
                                 ))}
                             </div>
 
-                            {/* ===== Vista tablet/desktop (tabla) ===== */}
+                            {/* Desktop (tabla) */}
                             <div className="hidden sm:block">
                                 <Table aria-label="Tabla de empleados" removeWrapper>
                                     <TableHeader>
                                         <TableColumn>EMPLEADO</TableColumn>
                                         <TableColumn>CÉDULA</TableColumn>
                                         <TableColumn>CORREO</TableColumn>
-                                        <TableColumn>ROL</TableColumn>
-                                        <TableColumn>ESTADO</TableColumn>
                                         <TableColumn className="text-right">ACCIONES</TableColumn>
                                     </TableHeader>
                                     <TableBody emptyContent="Sin resultados">
@@ -508,38 +660,29 @@ export default function EmpleadosPage() {
                                                         <div className="flex flex-col">
                                                             <span className="font-medium">{e.nombres}</span>
                                                             {e.telefono ? (
-                                                                <span className="text-xs text-default-500">{e.telefono}</span>
+                                                                <span className="text-xs text-default-500">
+                                                                    {e.telefono}
+                                                                </span>
                                                             ) : null}
                                                         </div>
                                                     </div>
                                                 </TableCell>
                                                 <TableCell>{e.cedula}</TableCell>
                                                 <TableCell className="break-words">{e.email}</TableCell>
-                                                <TableCell className="capitalize">
-                                                    <Chip size="sm" variant="flat">
-                                                        {e.rol}
-                                                    </Chip>
-                                                </TableCell>
-                                                <TableCell>
-                                                    <div className="flex items-center gap-2">
-                                                        <Chip
-                                                            color={e.activo ? "success" : "default"}
-                                                            size="sm"
-                                                            variant="flat"
-                                                        >
-                                                            {e.activo ? "Activo" : "Inactivo"}
-                                                        </Chip>
-                                                        <Switch
-                                                            aria-label={`Cambiar estado de ${e.nombres}`}
-                                                            isSelected={e.activo}
-                                                            onValueChange={(v) => onToggleActivo(e, v)}
-                                                        />
-                                                    </div>
-                                                </TableCell>
                                                 <TableCell className="text-right">
                                                     <div className="flex justify-end gap-2">
                                                         <Button size="sm" variant="light" onPress={() => onEdit(e)}>
                                                             <Icon icon="mdi:pencil" width={18} height={18} />
+                                                        </Button>
+                                                        <Button
+                                                            size="sm"
+                                                            variant="flat"
+                                                            onPress={() => openAsignaciones(e)}
+                                                            startContent={
+                                                                <Icon icon="solar:map-point-bold-duotone" />
+                                                            }
+                                                        >
+                                                            Asignaciones
                                                         </Button>
                                                         <Button
                                                             size="sm"
@@ -561,13 +704,21 @@ export default function EmpleadosPage() {
                 </CardBody>
             </Card>
 
+            {/* Modal Empleado */}
             <EmpleadoModal
-                isOpen={modal.isOpen}
-                onOpenChange={modal.onOpenChange}
+                isOpen={modalEmpleado.isOpen}
+                onOpenChange={modalEmpleado.onOpenChange}
                 data={editing}
                 setData={setEditing}
-                onSave={onSave}
+                onSave={onSaveEmpleado}
                 saving={saving}
+            />
+
+            {/* Modal Asignaciones */}
+            <AsignacionesModal
+                isOpen={modalAsig.isOpen}
+                onOpenChange={modalAsig.onOpenChange}
+                empleado={asigEmpleado}
                 gyms={gyms}
                 gymsLoading={gymsLoading}
                 gymsErr={gymsErr}
@@ -576,7 +727,7 @@ export default function EmpleadosPage() {
     );
 }
 
-/* ====================== Modal de creación/edición ====================== */
+/* ====================== Modal de creación/edición de Empleado ====================== */
 function EmpleadoModal({
     isOpen,
     onOpenChange,
@@ -584,9 +735,6 @@ function EmpleadoModal({
     setData,
     onSave,
     saving,
-    gyms,
-    gymsLoading,
-    gymsErr,
 }: {
     isOpen: boolean;
     onOpenChange: (v: boolean) => void;
@@ -594,22 +742,18 @@ function EmpleadoModal({
     setData: React.Dispatch<React.SetStateAction<EmpleadoUI | null>>;
     onSave: () => void;
     saving: boolean;
-    /** NUEVO: lista de gimnasios para asignación */
-    gyms: Array<{ key: string; label: string; value: number }>;
-    gymsLoading: boolean;
-    gymsErr: string | null;
 }) {
     if (!data) return null;
 
-    // Para el Select de Rol (estático, sin map → no hay problema de typing)
-    const ROL_ITEMS: Array<{ key: RolUI; label: string }> = [
-        { key: "operario", label: "Operario" },
-        { key: "vendedor", label: "Vendedor" },
-        { key: "administrador", label: "Administrador" },
-    ];
-
     return (
-        <Modal isOpen={isOpen} onOpenChange={onOpenChange} isDismissable={false} isKeyboardDismissDisabled placement="center" size="lg">
+        <Modal
+            isOpen={isOpen}
+            onOpenChange={onOpenChange}
+            isDismissable={false}
+            isKeyboardDismissDisabled
+            placement="center"
+            size="lg"
+        >
             <ModalContent>
                 {(onClose) => (
                     <>
@@ -624,7 +768,9 @@ function EmpleadoModal({
                                     variant="bordered"
                                     value={data.nombre}
                                     onValueChange={(v) =>
-                                        setData((p) => (p ? { ...p, nombre: v, nombres: `${v} ${p.apellido}`.trim() } : p))
+                                        setData((p) =>
+                                            p ? { ...p, nombre: v, nombres: `${v} ${p.apellido}`.trim() } : p
+                                        )
                                     }
                                     isRequired
                                 />
@@ -633,7 +779,9 @@ function EmpleadoModal({
                                     variant="bordered"
                                     value={data.apellido}
                                     onValueChange={(v) =>
-                                        setData((p) => (p ? { ...p, apellido: v, nombres: `${p?.nombre ?? ""} ${v}`.trim() } : p))
+                                        setData((p) =>
+                                            p ? { ...p, apellido: v, nombres: `${p?.nombre ?? ""} ${v}`.trim() } : p
+                                        )
                                     }
                                     isRequired
                                 />
@@ -656,63 +804,23 @@ function EmpleadoModal({
                                     label="Teléfono"
                                     variant="bordered"
                                     value={data.telefono}
-                                    onValueChange={(v) => setData((p) => (p ? { ...p, telefono: v } : p))}
+                                    onValueChange={(v) =>
+                                        setData((p) => (p ? { ...p, telefono: v } : p))
+                                    }
                                 />
 
-                                {/* Select de Gimnasio (con opción Sin asignación) */}
-                                <Select
-                                    label="Asignar a gimnasio"
-                                    placeholder={gymsLoading ? "Cargando gimnasios…" : "Selecciona un gimnasio"}
-                                    selectedKeys={new Set([String(data.id_gimnasio ?? 0)])}
-                                    items={[{ key: "0", label: "Sin asignación", value: 0 }, ...gyms]}
-                                    onSelectionChange={(keys) => {
-                                        const k = Array.from(keys)[0] as string;
-                                        const selected = gyms.find((g) => g.key === k);
-                                        const value = selected ? selected.value : Number(k) || 0; // 0 = sin asignación
-                                        setData((p) => (p ? { ...p, id_gimnasio: value } : p));
-                                    }}
-                                    isDisabled={gymsLoading}
-                                >
-                                    {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
-                                </Select>
-                                {/* ID Empresa (autocompletado desde sesión, editable por si acaso) */}
-                                {/* Rol */}
-                                <Select
-                                    label="Rol"
-                                    variant="bordered"
-                                    selectedKeys={new Set([data.rol])}
-                                    onSelectionChange={(keys) => {
-                                        const key = (Array.from(keys)[0] as RolUI) || "operario";
-                                        setData((p) => (p ? { ...p, rol: key, id_tipo_empleado: mapRolToTipo(key) } : p));
-                                    }}
-                                >
-                                    {ROL_ITEMS.map((r) => (
-                                        <SelectItem key={r.key}>{r.label}</SelectItem>
-                                    ))}
-                                </Select>
-
-                                {/* Contraseña solo al crear */}
                                 {!data.id_empleado && (
                                     <Input
                                         label="Contraseña (solo al crear)"
                                         type="password"
                                         variant="bordered"
                                         value={data.contrasena ?? ""}
-                                        onValueChange={(v) => setData((p) => (p ? { ...p, contrasena: v } : p))}
+                                        onValueChange={(v) =>
+                                            setData((p) => (p ? { ...p, contrasena: v } : p))
+                                        }
                                         description="Mínimo 8 caracteres."
                                     />
                                 )}
-                            </div>
-
-                            <div className="flex items-center justify-between">
-                                <div className="flex items-center gap-3">
-                                    <Switch
-                                        isSelected={data.activo}
-                                        onValueChange={(v) => setData((p) => (p ? { ...p, activo: v } : p))}
-                                    >
-                                        Activo
-                                    </Switch>
-                                </div>
                             </div>
                         </ModalBody>
                         <ModalFooter>
@@ -721,6 +829,394 @@ function EmpleadoModal({
                             </Button>
                             <Button color="primary" onPress={onSave} isLoading={saving}>
                                 Guardar
+                            </Button>
+                        </ModalFooter>
+                    </>
+                )}
+            </ModalContent>
+        </Modal>
+    );
+}
+
+/* ====================== Modal de Asignaciones (tabla CRUD) ====================== */
+function AsignacionesModal({
+    isOpen,
+    onOpenChange,
+    empleado,
+    gyms,
+    gymsLoading,
+    gymsErr,
+}: {
+    isOpen: boolean;
+    onOpenChange: (v: boolean) => void;
+    empleado: EmpleadoUI | null;
+    gyms: GymOption[];
+    gymsLoading: boolean;
+    gymsErr: string | null;
+}) {
+    const [rows, setRows] = React.useState<ApiEmpleadoAsignacion[]>([]);
+    const [loading, setLoading] = React.useState(false);
+    const [msg, setMsg] = React.useState<string | null>(null);
+    const [savingId, setSavingId] = React.useState<number | "new" | null>(null);
+
+    const gymOpts = React.useMemo(
+        () =>
+            [{ key: "0", label: "Sin asignación" }, ...gyms.map((g) => ({ key: g.key, label: g.label }))],
+        [gyms]
+    );
+
+    const empresaId = React.useMemo(() => {
+        const { empresa } = getSession();
+        return Number(empresa || 0);
+    }, []);
+
+    async function listEmpleadoAsignaciones(): Promise<ApiEmpleadoAsignacion[]> {
+        const data = await apiFetch(`/api/v1/empleado_asignacion`);
+        return Array.isArray(data) ? (data as ApiEmpleadoAsignacion[]) : [];
+    }
+
+    // 🔁 Sustituye esta función en AsignacionesModal
+    async function ensureAsignacionIdForDelete(
+        r: ApiEmpleadoAsignacion
+    ): Promise<number> {
+        const current = Number(r.id_empleado_asignacion ?? 0);
+        if (current > 0) return current;
+
+        // ✅ Buscar el id directamente en el DTO del empleado
+        const dto = await fetchEmpleadoDTO(Number(r.id_empleado));
+        if (!dto) return 0;
+
+        const match = (dto.asignaciones || []).find((a) =>
+            Number(a.id_empresa) === Number(r.id_empresa) &&
+            Number(a.id_gimnasio) === Number(r.id_gimnasio) &&
+            Number(a.id_tipo_empleado ?? DEFAULT_TIPO) === Number(r.id_tipo_empleado ?? DEFAULT_TIPO)
+        );
+
+        return match ? Number(match.id_empleado_asignacion ?? 0) : 0;
+    }
+
+    React.useEffect(() => {
+        let alive = true;
+        (async () => {
+            if (!isOpen || !empleado?.id_empleado) return;
+            try {
+                setLoading(true);
+                setMsg(null);
+
+                const [dto, all] = await Promise.all([
+                    fetchEmpleadoDTO(empleado.id_empleado),
+                    listEmpleadoAsignaciones(),
+                ]);
+                if (!alive) return;
+
+                const base: ApiEmpleadoAsignacion[] = (dto?.asignaciones || []).map(
+                    (a) => ({
+                        id_empleado_asignacion: Number(a.id_empleado_asignacion ?? 0),
+                        id_empleado: empleado.id_empleado!,
+                        id_empresa: Number(a.id_empresa ?? empresaId),
+                        id_gimnasio: Number(a.id_gimnasio ?? 0),
+                        id_tipo_empleado: Number(a.id_tipo_empleado ?? DEFAULT_TIPO), // 🔴 default 2
+                        activo: toBool(a.activo),
+                    })
+                );
+
+                const resolved = base.map((r) => {
+                    if (r.id_empleado_asignacion && r.id_empleado_asignacion > 0) return r;
+                    const match = all.find(
+                        (x) =>
+                            Number(x.id_empleado) === r.id_empleado &&
+                            Number(x.id_empresa) === r.id_empresa &&
+                            Number(x.id_gimnasio) === r.id_gimnasio &&
+                            Number(x.id_tipo_empleado) === Number(r.id_tipo_empleado ?? DEFAULT_TIPO)
+                    );
+                    return match
+                        ? { ...r, id_empleado_asignacion: Number(match.id_empleado_asignacion ?? 0) }
+                        : r;
+                });
+
+                setRows(resolved);
+            } catch (e: any) {
+                setMsg(e?.message || "No se pudieron cargar las asignaciones.");
+                setRows([]);
+            } finally {
+                setLoading(false);
+            }
+        })();
+        return () => {
+            alive = false;
+        };
+    }, [isOpen, empleado?.id_empleado, empresaId]);
+
+    function addRow() {
+        if (!empleado?.id_empleado) return;
+        setRows((prev) => [
+            {
+                id_empleado_asignacion: 0,
+                id_empleado: empleado.id_empleado!,
+                id_empresa: empresaId,
+                id_gimnasio: 0,
+                id_tipo_empleado: DEFAULT_TIPO, // 🔴 2
+                activo: true,
+            },
+            ...prev,
+        ]);
+    }
+
+    async function saveRow(r: ApiEmpleadoAsignacion) {
+        if (!empleado?.id_empleado) return;
+        const tipo = Number(r.id_tipo_empleado ?? DEFAULT_TIPO); // 🔴 2 si falta
+        setSavingId(
+            r.id_empleado_asignacion && r.id_empleado_asignacion > 0
+                ? r.id_empleado_asignacion
+                : "new"
+        );
+        try {
+            if (r.id_empleado_asignacion && r.id_empleado_asignacion > 0) {
+                await updateEmpleadoAsignacion(r.id_empleado_asignacion, {
+                    id_empleado: r.id_empleado,
+                    id_empresa: r.id_empresa,
+                    id_gimnasio: r.id_gimnasio,
+                    id_tipo_empleado: tipo,
+                });
+                setMsg("Asignación actualizada.");
+            } else {
+                const created = await createEmpleadoAsignacion({
+                    id_empleado: r.id_empleado,
+                    id_empresa: r.id_empresa,
+                    id_gimnasio: r.id_gimnasio,
+                    id_tipo_empleado: tipo,
+                });
+                setRows((prev) =>
+                    prev.map((x) => (x === r ? { ...created, activo: created.activo ?? true } : x))
+                );
+                setMsg("Asignación creada.");
+            }
+        } catch (e: any) {
+            setMsg(e?.message || "No se pudo guardar la asignación.");
+        } finally {
+            setSavingId(null);
+        }
+    }
+    // 🔁 Sustituye removeRow en AsignacionesModal
+    async function removeRow(r: ApiEmpleadoAsignacion) {
+        let idToDelete = Number(r.id_empleado_asignacion ?? 0);
+        if (!idToDelete || idToDelete <= 0) {
+            idToDelete = await ensureAsignacionIdForDelete(r);
+        }
+
+        // Si sigue sin ID, significa que nunca se creó en backend: basta con quitar la fila local
+        if (!idToDelete || idToDelete <= 0) {
+            setRows((prev) => prev.filter((x) => x !== r));
+            setMsg("Asignación descartada (no existía en servidor).");
+            return;
+        }
+
+        const ok = confirm(`¿Eliminar la asignación #${idToDelete}?`);
+        if (!ok) return;
+
+        setSavingId(idToDelete);
+        const snapshot = rows;
+        try {
+            // Llamada DELETE
+            await deleteEmpleadoAsignacion(idToDelete);
+            // Si el backend devolvió 204/200 está ok. Si devuelve 404, igual la removemos localmente.
+            setRows((prev) =>
+                prev.filter(
+                    (x) =>
+                        Number(x.id_empleado_asignacion ?? 0) !== idToDelete && x !== r
+                )
+            );
+            setMsg("Asignación eliminada.");
+        } catch (e: any) {
+            // Si el servidor responde 404, la fila ya no existe: la quitamos igual
+            const msg = String(e?.message || "");
+            if (msg.includes("404")) {
+                setRows((prev) =>
+                    prev.filter(
+                        (x) =>
+                            Number(x.id_empleado_asignacion ?? 0) !== idToDelete && x !== r
+                    )
+                );
+                setMsg("Asignación eliminada (no existía en el servidor).");
+            } else {
+                setMsg(e?.message || "No se pudo eliminar la asignación.");
+                setRows(snapshot);
+            }
+        } finally {
+            setSavingId(null);
+        }
+    }
+
+
+    function setRow<K extends keyof ApiEmpleadoAsignacion>(
+        r: ApiEmpleadoAsignacion,
+        key: K,
+        val: ApiEmpleadoAsignacion[K]
+    ) {
+        setRows((prev) => prev.map((x) => (x === r ? { ...x, [key]: val } : x)));
+    }
+
+    const pickFirstKey = (keys: Selection): string => {
+        if (keys === "all") return "0";
+        const set = keys as Set<React.Key>;
+        const first = Array.from(set)[0] ?? "0";
+        return String(first);
+    };
+
+    const getGymLabel = (id: number) =>
+        gyms.find((g) => g.value === id)?.label ?? (id ? `#${id}` : "Sin asignación");
+
+    return (
+        <Modal
+            isOpen={isOpen}
+            onOpenChange={onOpenChange}
+            isDismissable={false}
+            isKeyboardDismissDisabled
+            hideCloseButton
+            backdrop="opaque"
+            size="2xl"
+            placement="center"
+        >
+            <ModalContent>
+                {(onClose) => (
+                    <>
+                        <ModalHeader className="flex items-center gap-2">
+                            <Icon icon="solar:map-point-bold-duotone" />
+                            Asignaciones de {empleado?.nombres || "Empleado"}
+                        </ModalHeader>
+                        <ModalBody className="space-y-4">
+                            {msg && (
+                                <Chip
+                                    variant="flat"
+                                    color={msg.includes("No se pudo") ? "warning" : "success"}
+                                >
+                                    {msg}
+                                </Chip>
+                            )}
+
+                            <div className="flex justify-between items-center">
+                                <div className="text-sm text-default-500">
+                                    {gymsLoading
+                                        ? "Cargando gimnasios…"
+                                        : gymsErr
+                                            ? gymsErr
+                                            : `Gimnasios disponibles: ${gyms.length}`}
+                                </div>
+                                <Button
+                                    size="sm"
+                                    startContent={<Icon icon="mdi:plus" />}
+                                    onPress={addRow}
+                                    isDisabled={gymsLoading || !empleado?.id_empleado}
+                                >
+                                    Nueva asignación
+                                </Button>
+                            </div>
+
+                            <Card className="border">
+                                <CardBody className="p-0">
+                                    {loading ? (
+                                        <div className="flex items-center justify-center py-10">
+                                            <Spinner />
+                                        </div>
+                                    ) : (
+                                        <Table aria-label="Tabla de asignaciones" removeWrapper>
+                                            <TableHeader>
+                                                <TableColumn width={140}>ID</TableColumn>
+                                                <TableColumn>GIMNASIO</TableColumn>
+                                                <TableColumn className="text-right" width={200}>
+                                                    ACCIONES
+                                                </TableColumn>
+                                            </TableHeader>
+                                            <TableBody emptyContent="Sin asignaciones">
+                                                {rows.map((r, idx) => (
+                                                    <TableRow
+                                                        key={(r.id_empleado_asignacion ?? 0) * 1000 + idx}
+                                                    >
+                                                        <TableCell>
+                                                            {r.id_empleado_asignacion &&
+                                                                r.id_empleado_asignacion > 0 ? (
+                                                                <Chip size="sm" variant="flat">
+                                                                    #{r.id_empleado_asignacion}
+                                                                </Chip>
+                                                            ) : (
+                                                                <Chip size="sm" color="primary" variant="flat">
+                                                                    Nuevo
+                                                                </Chip>
+                                                            )}
+                                                        </TableCell>
+
+                                                        <TableCell>
+                                                            <Select<{ key: string; label: string }>
+                                                                aria-label="Gimnasio"
+                                                                selectionMode="single"
+                                                                disallowEmptySelection
+                                                                selectedKeys={
+                                                                    new Set([String(r.id_gimnasio ?? 0)]) as unknown as Selection
+                                                                }
+                                                                onSelectionChange={(keys: Selection) => {
+                                                                    const picked = pickFirstKey(keys);
+                                                                    const id = Number(picked) || 0;
+                                                                    setRow(r, "id_gimnasio", id);
+                                                                }}
+                                                                items={gymOpts}
+                                                                className="min-w-[220px]"
+                                                            >
+                                                                {(item) => (
+                                                                    <SelectItem key={item.key}>{item.label}</SelectItem>
+                                                                )}
+                                                            </Select>
+                                                        </TableCell>
+
+                                                        <TableCell className="text-right">
+                                                            <div className="flex justify-end gap-2">
+                                                                <Button
+                                                                    size="sm"
+                                                                    variant="flat"
+                                                                    isLoading={
+                                                                        savingId ===
+                                                                        (r.id_empleado_asignacion &&
+                                                                            r.id_empleado_asignacion > 0
+                                                                            ? r.id_empleado_asignacion
+                                                                            : "new")
+                                                                    }
+                                                                    onPress={() => saveRow(r)}
+                                                                    startContent={<Icon icon="mdi:content-save" />}
+                                                                >
+                                                                    Guardar
+                                                                </Button>
+                                                                <Button
+                                                                    size="sm"
+                                                                    color="danger"
+                                                                    variant="light"
+                                                                    onPress={() => removeRow(r)}
+                                                                    startContent={<Icon icon="mdi:trash-can" />}
+                                                                >
+                                                                    Eliminar
+                                                                </Button>
+                                                            </div>
+                                                        </TableCell>
+                                                    </TableRow>
+                                                ))}
+                                            </TableBody>
+                                        </Table>
+                                    )}
+                                </CardBody>
+                            </Card>
+
+                            {/* Firma: solo nombres de gimnasios asignados (activos) */}
+                            <div className="text-sm text-default-500">
+                                <span className="font-medium">Asignados: </span>
+                                {rows.length === 0
+                                    ? "—"
+                                    : rows
+                                        .filter((r) => toBool(r.activo) && (r.id_gimnasio ?? 0) > 0)
+                                        .map((r) => getGymLabel(r.id_gimnasio))
+                                        .join(" • ")}
+                            </div>
+                        </ModalBody>
+                        <ModalFooter>
+                            <Button variant="light" onPress={onClose}>
+                                Cerrar
                             </Button>
                         </ModalFooter>
                     </>

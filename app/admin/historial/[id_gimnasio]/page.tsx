@@ -1,31 +1,22 @@
 "use client";
+
 import React from "react";
 import {
-    Button,
-    Card,
-    CardBody,
-    CardHeader,
-    Chip,
-    Spinner,
-    Input,
-    Select,
-    SelectItem,
-    Tooltip,
-    Progress,
-    Kbd,
-    Divider,
+    Button, Card, CardBody, CardHeader, Chip, Spinner, Input,
+    Select, SelectItem, Tooltip, Progress, Kbd, Divider
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
-import { ApiEstadoPago, ApiMembresia } from "../../../../lib/types";
-import { LOCALE, money } from "../../../../lib/utils";
-import { apiListMembresiasByGym, apiListEstadosPago } from "../../../../lib/api";
-import EditarMembresiaModal from "./EditarMembresiaModal";
+import { useParams, useRouter, useSearchParams } from "next/navigation";
 
-/* Utilidades de tiempo */
-const daysBetween = (a: Date, b: Date) => Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
+import type { ApiEstadoPago, ApiMembresia } from "../../lib/types";
+import { LOCALE, money } from "../../lib/utils";
+import { apiListMembresiasByGym, apiListEstadosPago } from "../../lib/api";
+import EditarMembresiaModal from "../../sucursales/[sid]/components/membresias/EditarMembresiaModal";
+
+/* --- helpers --- */
+const daysBetween = (a: Date, b: Date) =>
+    Math.floor((b.getTime() - a.getTime()) / (1000 * 60 * 60 * 24));
 const isSameDay = (a: Date, b: Date) => a.toDateString() === b.toDateString();
-
-/* Mapeo de colores por estado */
 const estadoColor = (nombre?: string): "default" | "success" | "warning" | "danger" | "primary" => {
     const n = (nombre || "").toLowerCase();
     if (/(pag|completo|aprob|ok)/.test(n)) return "success";
@@ -33,62 +24,63 @@ const estadoColor = (nombre?: string): "default" | "success" | "warning" | "dang
     if (/(venc|rech|anul)/.test(n)) return "danger";
     return "primary";
 };
+type EstadoOption = { id: string; nombre: string };
 
-export default function ListaMembresias({ id_gimnasio }: { id_gimnasio: number }) {
+export default function Page() {
+    const router = useRouter();
+    const sp = useSearchParams();
+    const { id_gimnasio } = useParams<{ id_gimnasio: string }>();
+
+    const gid = Number.parseInt(String(id_gimnasio), 10);
+    React.useEffect(() => {
+        if (Number.isFinite(gid) && gid > 0) {
+            try { localStorage.setItem("gymId", String(gid)); } catch { }
+        }
+    }, [gid]);
+
     const [items, setItems] = React.useState<ApiMembresia[]>([]);
     const [estados, setEstados] = React.useState<ApiEstadoPago[]>([]);
     const [loading, setLoading] = React.useState(false);
     const [err, setErr] = React.useState<string | null>(null);
 
-    // UI estado
     const [search, setSearch] = React.useState("");
     const [filtro, setFiltro] = React.useState<"todas" | "activas" | "vencidas" | "hoy">("todas");
-    const [estadoSel, setEstadoSel] = React.useState<string>(""); // id_estado_pago string
+    const [estadoSel, setEstadoSel] = React.useState<string>("");
     const [sort, setSort] = React.useState<"recientes" | "antiguas" | "monto">("recientes");
     const [page, setPage] = React.useState(1);
-    const pageSize = 10;
+    const pageSize = 12;
 
     const [editOpen, setEditOpen] = React.useState(false);
     const [editing, setEditing] = React.useState<ApiMembresia | null>(null);
 
-    type EstadoOption = { id: string; nombre: string };
-
     const now = new Date();
 
     const reload = React.useCallback(async () => {
-        setLoading(true);
-        setErr(null);
+        setLoading(true); setErr(null);
         try {
             const [list, ep] = await Promise.all([
-                apiListMembresiasByGym(id_gimnasio),
+                apiListMembresiasByGym(gid),
                 apiListEstadosPago(),
             ]);
-            // Orden base
             list.sort((a, b) => b.id_membresia - a.id_membresia);
             setItems(list);
             setEstados(ep);
             setPage(1);
         } catch (e: any) {
-            setErr(
-                e?.__is401
-                    ? "Sesión expirada (401). Inicia sesión."
-                    : e?.message || "No se pudo listar membresías."
-            );
+            setErr(e?.__is401 ? "Sesión expirada (401). Inicia sesión." : e?.message || "No se pudo listar membresías.");
         } finally {
             setLoading(false);
         }
-    }, [id_gimnasio]);
+    }, [gid]);
+
+    React.useEffect(() => { if (Number.isFinite(gid)) reload(); }, [gid, reload]);
 
     React.useEffect(() => {
-        reload();
+        const onKey = (ev: KeyboardEvent) => { if (ev.key.toLowerCase() === "r") reload(); };
+        window.addEventListener("keydown", onKey);
+        return () => window.removeEventListener("keydown", onKey);
     }, [reload]);
 
-    const openEdit = (m: ApiMembresia) => {
-        setEditing(m);
-        setEditOpen(true);
-    };
-
-    // Derivados: buscar + filtros + orden + paginación
     const estadosById = React.useMemo(() => {
         const map = new Map<number, ApiEstadoPago>();
         estados.forEach((e) => map.set(e.id_estado_pago, e));
@@ -100,40 +92,34 @@ export default function ListaMembresias({ id_gimnasio }: { id_gimnasio: number }
         const list = items.filter((m) => {
             const exp = new Date(m.fecha_expiracion);
             const activo = exp > now;
-            const coincideFiltro =
+            const passFiltro =
                 filtro === "todas" ||
                 (filtro === "activas" && activo) ||
                 (filtro === "vencidas" && !activo) ||
                 (filtro === "hoy" && isSameDay(exp, now));
-
-            const coincideEstado = !estadoSel || String(m.id_estado_pago) === estadoSel;
-
-            if (!coincideFiltro || !coincideEstado) return false;
+            const passEstado = !estadoSel || String(m.id_estado_pago) === estadoSel;
+            if (!passFiltro || !passEstado) return false;
 
             if (!term) return true;
-            // Campos buscables
-            const base = [
-                `#${m.id_membresia}`,
-                m.unidad_duracion,
-                String(m.cantidad_duracion),
-                money(m.precio_total),
-            ]
+            const base = [`#${m.id_membresia}`, m.unidad_duracion, String(m.cantidad_duracion), money(m.precio_total)]
                 .join(" ")
                 .toLowerCase();
             return base.includes(term);
         });
 
-        // Orden
         list.sort((a, b) => {
             if (sort === "monto") return (b.precio_total || 0) - (a.precio_total || 0);
             if (sort === "antiguas") return a.id_membresia - b.id_membresia;
-            return b.id_membresia - a.id_membresia; // recientes
+            return b.id_membresia - a.id_membresia;
         });
 
         return list;
     }, [items, search, filtro, estadoSel, sort, now]);
 
-    const totalMonto = React.useMemo(() => filtrados.reduce((acc, x) => acc + (x.precio_total || 0), 0), [filtrados]);
+    const totalMonto = React.useMemo(
+        () => filtrados.reduce((acc, x) => acc + (x.precio_total || 0), 0),
+        [filtrados]
+    );
 
     const paginados = React.useMemo(() => {
         const start = (page - 1) * pageSize;
@@ -142,41 +128,34 @@ export default function ListaMembresias({ id_gimnasio }: { id_gimnasio: number }
 
     const totalPages = Math.max(1, Math.ceil(filtrados.length / pageSize));
 
-    const EmptyState = (
-        <div className="flex flex-col items-center gap-2 text-foreground-500 py-12">
-            <Icon icon="solar:archive-minimalistic-bold-duotone" className="text-3xl" />
-            <div className="text-sm">Sin ventas registradas.</div>
-            <div className="text-xs opacity-80">Crea una membresía para verla aquí.</div>
-        </div>
-    );
-
-    const estadoOptions: EstadoOption[] = [
+    const estadoOptions: EstadoOption[] = React.useMemo(() => ([
         { id: "", nombre: "Todos los estados" },
-        ...estados.map(e => ({ id: String(e.id_estado_pago), nombre: e.nombre })),
-    ];
+        ...estados.map((e) => ({ id: String(e.id_estado_pago), nombre: e.nombre })),
+    ]), [estados]);
+
+    const goSelector = () => {
+        try { localStorage.removeItem("gymId"); } catch { }
+        const qs = sp.get("empresa") ? `?empresa=${sp.get("empresa")}` : "";
+        router.push(`/admin/historial${qs}`);
+    };
 
     return (
         <Card className="border">
             <CardHeader className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
+                    <Button size="sm" variant="flat" onPress={goSelector}
+                        startContent={<Icon icon="solar:arrow-left-2-bold-duotone" />}>
+                        Cambiar gimnasio
+                    </Button>
                     <Icon icon="solar:bill-list-bold-duotone" className="text-xl" />
-                    <span className="font-semibold">Membresías vendidas</span>
-                    <Chip size="sm" variant="flat" color="success">
-                        {items.length}
-                    </Chip>
+                    <span className="font-semibold">Historial de membresías</span>
+                    <Chip size="sm" variant="flat" color="success">{items.length}</Chip>
                 </div>
-                <div className="flex items-center gap-2">
-                    <Tooltip content="Refrescar (R)">
-                        <Button
-                            size="sm"
-                            variant="flat"
-                            startContent={<Icon icon="solar:refresh-bold-duotone" />}
-                            onPress={reload}
-                        >
-                            Refrescar
-                        </Button>
-                    </Tooltip>
-                </div>
+                <Tooltip content="Refrescar (R)">
+                    <Button size="sm" variant="flat" startContent={<Icon icon="solar:refresh-bold-duotone" />} onPress={reload}>
+                        Refrescar
+                    </Button>
+                </Tooltip>
             </CardHeader>
 
             <CardBody className="space-y-4">
@@ -188,80 +167,40 @@ export default function ListaMembresias({ id_gimnasio }: { id_gimnasio: number }
                             placeholder="Buscar #ID, tipo, monto…"
                             startContent={<Icon icon="solar:magnifer-bold-duotone" />}
                             value={search}
-                            onValueChange={(v) => {
-                                setSearch(v);
-                                setPage(1);
-                            }}
+                            onValueChange={(v) => { setSearch(v); setPage(1); }}
                         />
                     </div>
 
                     <div className="flex gap-2">
-                        <Chip
-                            variant={filtro === "todas" ? "solid" : "flat"}
-                            color={filtro === "todas" ? "primary" : "default"}
-                            onClick={() => {
-                                setFiltro("todas");
-                                setPage(1);
-                            }}
-                            className="cursor-pointer"
-                        >
-                            Todas
-                        </Chip>
-                        <Chip
-                            variant={filtro === "activas" ? "solid" : "flat"}
-                            color={filtro === "activas" ? "success" : "default"}
-                            onClick={() => {
-                                setFiltro("activas");
-                                setPage(1);
-                            }}
-                            className="cursor-pointer"
-                        >
-                            Activas
-                        </Chip>
-                        <Chip
-                            variant={filtro === "vencidas" ? "solid" : "flat"}
-                            color={filtro === "vencidas" ? "danger" : "default"}
-                            onClick={() => {
-                                setFiltro("vencidas");
-                                setPage(1);
-                            }}
-                            className="cursor-pointer"
-                        >
-                            Vencidas
-                        </Chip>
-                        <Chip
-                            variant={filtro === "hoy" ? "solid" : "flat"}
-                            color={filtro === "hoy" ? "warning" : "default"}
-                            onClick={() => {
-                                setFiltro("hoy");
-                                setPage(1);
-                            }}
-                            className="cursor-pointer"
-                        >
-                            Expiran hoy
-                        </Chip>
+                        {(["todas", "activas", "vencidas", "hoy"] as const).map((key) => (
+                            <Chip
+                                key={key}
+                                variant={filtro === key ? "solid" : "flat"}
+                                color={key === "activas" ? "success" : key === "vencidas" ? "danger" : key === "hoy" ? "warning" : "primary"}
+                                onClick={() => { setFiltro(key); setPage(1); }}
+                                className="cursor-pointer"
+                            >
+                                {key === "todas" ? "Todas" : key === "hoy" ? "Expiran hoy" : key.charAt(0).toUpperCase() + key.slice(1)}
+                            </Chip>
+                        ))}
                     </div>
 
-                    <Select<EstadoOption>
+                    {/* Select con items + render prop (evita error TS) */}
+                    <Select
                         aria-label="Estado"
                         size="sm"
                         className="w-[180px]"
                         items={estadoOptions}
                         selectedKeys={estadoSel ? new Set([estadoSel]) : new Set([])}
-                        onSelectionChange={(k) => {
-                            const v = String(Array.from(k)[0] || "");
+                        onSelectionChange={(keys) => {
+                            const v = String(Array.from(keys)[0] ?? "");
                             setEstadoSel(v);
                             setPage(1);
                         }}
                         disallowEmptySelection={false}
                     >
-                        {(item) => (
-                            <SelectItem key={item.id}>
-                                {item.nombre}
-                            </SelectItem>
-                        )}
+                        {(item: EstadoOption) => <SelectItem key={item.id}>{item.nombre}</SelectItem>}
                     </Select>
-
 
                     <Select
                         aria-label="Orden"
@@ -290,13 +229,13 @@ export default function ListaMembresias({ id_gimnasio }: { id_gimnasio: number }
                     <div className="text-danger-500 flex items-center gap-2">
                         <Icon icon="solar:danger-triangle-bold-duotone" />
                         {err}
-                        <Button size="sm" variant="flat" onPress={reload} className="ml-2">
-                            Reintentar
-                        </Button>
+                        <Button size="sm" variant="flat" onPress={reload} className="ml-2">Reintentar</Button>
                     </div>
                 )}
 
-                {!loading && filtrados.length === 0 && EmptyState}
+                {!loading && filtrados.length === 0 && (
+                    <div className="text-sm text-foreground-500">Sin resultados con los filtros actuales.</div>
+                )}
 
                 {/* Lista */}
                 {!loading && filtrados.length > 0 && (
@@ -305,7 +244,7 @@ export default function ListaMembresias({ id_gimnasio }: { id_gimnasio: number }
                             const exp = new Date(m.fecha_expiracion);
                             const ini = new Date(m.fecha_inicio);
                             const totalDays = Math.max(1, daysBetween(ini, exp));
-                            const daysLeft = Math.max(0, daysBetween(now, exp));
+                            const daysLeft = Math.max(0, daysBetween(new Date(), exp));
                             const progress = Math.min(100, Math.max(0, ((totalDays - daysLeft) / totalDays) * 100));
                             const estado = estadosById.get(m.id_estado_pago);
 
@@ -326,12 +265,8 @@ export default function ListaMembresias({ id_gimnasio }: { id_gimnasio: number }
 
                                         <div className="flex items-center justify-between">
                                             <div className="text-foreground-500">
-                                                <div>
-                                                    Inicio: {new Date(m.fecha_inicio).toLocaleString(LOCALE)}
-                                                </div>
-                                                <div>
-                                                    Expira: {exp.toLocaleString(LOCALE)}
-                                                </div>
+                                                <div>Inicio: {new Date(m.fecha_inicio).toLocaleString(LOCALE)}</div>
+                                                <div>Expira: {exp.toLocaleString(LOCALE)}</div>
                                             </div>
                                             <div className="text-right">
                                                 <div className="font-semibold">{money(m.precio_total)}</div>
@@ -343,13 +278,18 @@ export default function ListaMembresias({ id_gimnasio }: { id_gimnasio: number }
                                             </div>
                                         </div>
 
-                                        <div>
-                                            <Progress aria-label="progreso" value={progress} className="h-1.5" />
-                                        </div>
+                                        <Progress aria-label="progreso" value={progress} className="h-1.5" />
 
                                         <div className="flex justify-end gap-2 pt-1">
                                             <Tooltip content="Editar">
-                                                <Button size="sm" variant="flat" onPress={() => openEdit(m)} startContent={<Icon icon="solar:pen-bold-duotone" />}>Editar</Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="flat"
+                                                    onPress={() => { setEditing(m); setEditOpen(true); }}
+                                                    startContent={<Icon icon="solar:pen-bold-duotone" />}
+                                                >
+                                                    Editar
+                                                </Button>
                                             </Tooltip>
                                         </div>
                                     </CardBody>
@@ -359,7 +299,7 @@ export default function ListaMembresias({ id_gimnasio }: { id_gimnasio: number }
                     </div>
                 )}
 
-                {/* Paginación simple */}
+                {/* Paginación */}
                 {!loading && filtrados.length > pageSize && (
                     <div className="flex items-center justify-between pt-2">
                         <div className="text-xs text-foreground-500">
@@ -378,10 +318,10 @@ export default function ListaMembresias({ id_gimnasio }: { id_gimnasio: number }
 
                 <Divider />
                 <div className="flex items-center justify-between text-xs text-foreground-500">
-                    <div className="flex items-center gap-1">
-                        <Kbd>R</Kbd> para refrescar
+                    <div className="flex items-center gap-1"></div>
+                    <div className="opacity-80">
+                        Mostrando {Math.min(paginados.length, filtrados.length)} de {filtrados.length} resultados
                     </div>
-                    <div className="opacity-80">Mostrando {paginados.length} de {filtrados.length} resultados</div>
                 </div>
             </CardBody>
 

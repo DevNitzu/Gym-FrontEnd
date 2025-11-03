@@ -1,32 +1,55 @@
 "use client";
 import React from "react";
 import {
-    Button, Card, CardBody, CardHeader, Input, Modal, ModalBody, ModalContent,
-    ModalFooter, ModalHeader, Select, SelectItem, Spinner, Divider
+    Button,
+    Card,
+    CardBody,
+    CardHeader,
+    Input,
+    Modal,
+    ModalBody,
+    ModalContent,
+    ModalFooter,
+    ModalHeader,
+    Select,
+    SelectItem,
+    Spinner,
+    Chip,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import {
-    ApiCliente, ApiEstadoPago, ApiMembresia, ApiMetodoPago, ApiPrecioMembresia
+    ApiCliente,
+    ApiEstadoPago,
+    ApiMembresia,
+    ApiMetodoPago,
+    ApiPrecioMembresia,
 } from "../../../../lib/types";
 import { addDuration, money } from "../../../../lib/utils";
 import {
-    apiCreateCliente, apiCreateMembresia, apiListClientes,
-    apiListEstadosPago, apiListMetodoPagos, apiListPrecioMembresias
+    apiCreateCliente,
+    apiCreateMembresia,
+    apiListClientes,
+    apiListEstadosPago,
+    apiListMetodoPagos,
+    apiListPrecioMembresias,
 } from "../../../../lib/api";
 import InfoModal from "../common/InfoModal";
 
-/* ===== Helpers de fecha/hora ===== */
+/* ===== Helpers fecha ===== */
 const pad2 = (n: number) => String(n).padStart(2, "0");
 const todayLocalYYYYMMDD = () => {
     const d = new Date();
     return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
-const toLocalHHmm = (d: Date) => `${pad2(d.getHours())}:${pad2(d.getMinutes())}`;
-const combineLocalDateTimeToISO = (dateStr: string, hhmm: string) => {
+// ISO a medianoche (no mostramos hora)
+const dateOnlyToISOAtMidnight = (dateStr: string) => {
     const [y, m, d] = dateStr.split("-").map(Number);
-    const [h, mm] = hhmm.split(":").map(Number);
-    const dt = new Date(y, (m || 1) - 1, d || 1, h || 0, mm || 0, 0, 0);
+    const dt = new Date(y, (m || 1) - 1, d || 1, 0, 0, 0);
     return dt.toISOString();
+};
+const toYYYYMMDD = (v: string | Date) => {
+    const d = v instanceof Date ? v : new Date(v);
+    return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`;
 };
 
 export default function NuevaMembresiaCard({
@@ -36,6 +59,7 @@ export default function NuevaMembresiaCard({
     id_gimnasio: number;
     onCreated: (m: ApiMembresia) => void;
 }) {
+    /* ===== Catálogos ===== */
     const [planes, setPlanes] = React.useState<ApiPrecioMembresia[]>([]);
     const [clientes, setClientes] = React.useState<ApiCliente[]>([]);
     const [metodos, setMetodos] = React.useState<ApiMetodoPago[]>([]);
@@ -43,40 +67,41 @@ export default function NuevaMembresiaCard({
     const [loading, setLoading] = React.useState(true);
     const [err, setErr] = React.useState<string | null>(null);
 
+    /* ===== Selecciones ===== */
     const [selPlan, setSelPlan] = React.useState<number | null>(null);
     const [selCliente, setSelCliente] = React.useState<number | null>(null);
     const [selMetodo, setSelMetodo] = React.useState<number | null>(null);
     const [selEstado, setSelEstado] = React.useState<number | null>(null);
 
+    /* ===== Parámetros del plan ===== */
     const [unidad, setUnidad] = React.useState<string>("mes");
     const [cant, setCant] = React.useState<string>("1");
     const [precioUnit, setPrecioUnit] = React.useState<number>(0);
-    const [descuento, setDescuento] = React.useState<string>("0");
-    const [renovable, setRenovable] = React.useState(true);
 
-    // UI: fecha + hora (solo minutos)
+    // Descuento en PORCENTAJE ENTERO 0..100 (UI)
+    const [descuentoPct, setDescuentoPct] = React.useState<number>(0);
+    const [showDesc, setShowDesc] = React.useState<boolean>(false);
+
+    const [renovable] = React.useState(true);
+
+    /* ===== Fechas ===== */
     const [fecha, setFecha] = React.useState<string>(todayLocalYYYYMMDD());
-    const [hora, setHora] = React.useState<string>(toLocalHHmm(new Date()));
-
-    // ISO para backend
-    const fechaInicioISO = React.useMemo(() => combineLocalDateTimeToISO(fecha, hora), [fecha, hora]);
+    const fechaInicioISO = React.useMemo(() => dateOnlyToISOAtMidnight(fecha), [fecha]);
     const fechaExpISO = React.useMemo(
         () => addDuration(fechaInicioISO, unidad, Number(cant) || 0),
         [fechaInicioISO, unidad, cant]
     );
-    const expLocal = React.useMemo(() => {
-        const d = new Date(fechaExpISO);
-        return `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())} ${toLocalHHmm(d)}`;
-    }, [fechaExpISO]);
+    const expLocalDate = React.useMemo(() => toYYYYMMDD(fechaExpISO), [fechaExpISO]);
 
     const [saving, setSaving] = React.useState(false);
 
-    // Modales CRUD rápidos
+    /* ===== Modales ===== */
     const [mClienteOpen, setMClienteOpen] = React.useState(false);
     const [okOpen, setOkOpen] = React.useState(false);
     const [errOpen, setErrOpen] = React.useState(false);
     const [errMsg, setErrMsg] = React.useState("");
 
+    /* ===== Carga inicial ===== */
     const reloadBasics = React.useCallback(async () => {
         setLoading(true);
         setErr(null);
@@ -87,28 +112,33 @@ export default function NuevaMembresiaCard({
                 apiListMetodoPagos(),
                 apiListEstadosPago(),
             ]);
-            setPlanes(p);
-            setClientes(c);
-            setMetodos(mp);
-            setEstados(ep);
 
-            if (p[0]) {
-                setSelPlan(p[0].id_precio_membresia);
-                setUnidad((p[0].tipo || "mes").toLowerCase());
-                setPrecioUnit(p[0].precio || 0);
+            setPlanes(p || []);
+            setClientes(c || []);
+            setMetodos(mp || []);
+            setEstados(ep || []);
+
+            if (c?.length && !selCliente) setSelCliente(c[0].id_cliente);
+            if (mp?.length && !selMetodo) setSelMetodo(mp[0].id_metodo_pago);
+            if (ep?.length && !selEstado) setSelEstado(ep[0].id_estado_pago);
+
+            const planMes = p.find((x) => (x.tipo || "").toLowerCase() === "mes") || p[0];
+            if (planMes) {
+                setSelPlan(planMes.id_precio_membresia);
+                setUnidad((planMes.tipo || "mes").toLowerCase());
+                setPrecioUnit(planMes.precio || 0);
                 setCant("1");
             }
-            if (c[0]) setSelCliente(c[0].id_cliente);
-            if (mp[0]) setSelMetodo(mp[0].id_metodo_pago);
-            if (ep[0]) setSelEstado(ep[0].id_estado_pago);
         } catch (e: any) {
             setErr(e?.message || "No se pudo cargar catálogos.");
         } finally {
             setLoading(false);
         }
-    }, [id_gimnasio]);
+    }, [id_gimnasio, selCliente, selMetodo, selEstado]);
 
-    React.useEffect(() => { reloadBasics(); }, [reloadBasics]);
+    React.useEffect(() => {
+        reloadBasics();
+    }, [reloadBasics]);
 
     React.useEffect(() => {
         const plan = planes.find((x) => x.id_precio_membresia === selPlan);
@@ -119,27 +149,57 @@ export default function NuevaMembresiaCard({
         }
     }, [selPlan, planes]);
 
-    const total = Math.max(0, (precioUnit || 0) * (Number(cant) || 0) - (Number(descuento) || 0));
+    /* ===== Derivados ===== */
+    const selectedCliente = React.useMemo(
+        () => clientes.find((c) => c.id_cliente === selCliente) || null,
+        [clientes, selCliente]
+    );
 
+    // Clamp 0..100 y calculo
+    const pct = Math.min(100, Math.max(0, Math.round(Number(descuentoPct) || 0)));
+    const pctFrac = pct / 100; // para el backend/cálculo
+    const subtotal = (precioUnit || 0) * (Number(cant) || 0);
+    const total = Math.max(0, subtotal * (1 - pctFrac));
+    const canSave = !!(selCliente && selPlan && selMetodo && selEstado);
+
+    /* ===== Featured plans ===== */
+    const featuredPlans = React.useMemo(() => {
+        if (!planes?.length) return [] as ApiPrecioMembresia[];
+        const idx: Record<string, ApiPrecioMembresia | undefined> = {};
+        for (const t of ["dia", "mes", "año"]) idx[t] = planes.find((p) => (p.tipo || "").toLowerCase() === t);
+        const base = [idx["dia"], idx["mes"], idx["año"]].filter(Boolean) as ApiPrecioMembresia[];
+        if (base.length >= 3) return base.slice(0, 3);
+        const taken = new Set(base.map((p) => p.id_precio_membresia));
+        const rest = planes
+            .filter((p) => !taken.has(p.id_precio_membresia))
+            .sort((a, b) => (a.precio || 0) - (b.precio || 0));
+        return [...base, ...rest].slice(0, 3);
+    }, [planes]);
+
+    const pickPlan = (p: ApiPrecioMembresia) => {
+        setSelPlan(p.id_precio_membresia);
+        setUnidad((p.tipo || "mes").toLowerCase());
+        setPrecioUnit(p.precio || 0);
+        setCant("1");
+    };
+
+    /* ===== Crear cliente rápido ===== */
     const createCliente = async () => {
         try {
-            const nombre = (document.getElementById("ncli-nombre") as HTMLInputElement).value.trim();
-            const apellido = (document.getElementById("ncli-apellido") as HTMLInputElement).value.trim();
-            const cedula = (document.getElementById("ncli-cedula") as HTMLInputElement).value.trim();
-            const correo = (document.getElementById("ncli-correo") as HTMLInputElement).value.trim();
-            const telefono = (document.getElementById("ncli-telefono") as HTMLInputElement).value.trim();
+            const nombre = (document.getElementById("ncli-nombre") as HTMLInputElement)?.value?.trim();
+            const apellido = (document.getElementById("ncli-apellido") as HTMLInputElement)?.value?.trim();
+            const cedula = (document.getElementById("ncli-cedula") as HTMLInputElement)?.value?.trim();
+            const correo = (document.getElementById("ncli-correo") as HTMLInputElement)?.value?.trim();
+            const telefono = (document.getElementById("ncli-telefono") as HTMLInputElement)?.value?.trim();
+
             if (!nombre || !apellido) {
                 setErrMsg("Nombre y apellido son obligatorios.");
                 setErrOpen(true);
                 return;
             }
             const cli = await apiCreateCliente({ nombre, apellido, cedula, correo, telefono });
-
-            // Añade y selecciona automático
             setClientes((s) => [cli, ...(s || [])]);
             setSelCliente(cli.id_cliente);
-
-            // Cierra el modal en éxito para evitar conflictos con el Select externo
             setMClienteOpen(false);
         } catch (e: any) {
             setErrMsg(e?.message || "No se pudo crear el cliente.");
@@ -147,24 +207,23 @@ export default function NuevaMembresiaCard({
         }
     };
 
+    /* ===== Guardar membresía ===== */
     const handleSave = async () => {
         try {
             setSaving(true);
-            if (!selCliente) throw new Error("Selecciona un cliente");
-            if (!selPlan) throw new Error("Selecciona un plan");
-            if (!selMetodo) throw new Error("Selecciona un método de pago");
-            if (!selEstado) throw new Error("Selecciona un estado de pago");
+            if (!canSave) throw new Error("Faltan datos: cliente, plan, método y estado.");
 
             const cantidad = Math.max(1, Number(cant) || 1);
             const payload: Omit<ApiMembresia, "id_membresia" | "activo"> = {
                 id_gimnasio,
-                id_cliente: selCliente,
-                id_metodo_pago: selMetodo,
-                id_estado_pago: selEstado,
+                id_cliente: selCliente!,
+                id_metodo_pago: selMetodo!,
+                id_estado_pago: selEstado!,
                 unidad_duracion: unidad,
                 cantidad_duracion: cantidad,
                 precio_unitario: Number(precioUnit),
-                descuento: Number(descuento) || 0,
+                // Guardamos el DESCUENTO como fracción (0..1) para el backend
+                descuento: pctFrac,
                 precio_total: total,
                 fecha_creacion: new Date().toISOString(),
                 fecha_inicio: fechaInicioISO,
@@ -184,6 +243,7 @@ export default function NuevaMembresiaCard({
         }
     };
 
+    /* ===== UI ===== */
     return (
         <Card className="border">
             <CardHeader className="flex items-center justify-between">
@@ -191,13 +251,13 @@ export default function NuevaMembresiaCard({
                     <Icon icon="solar:card-bold-duotone" className="text-xl" />
                     <span className="font-semibold">Nueva membresía</span>
                 </div>
-                <div className="text-xs text-foreground-500">Crea y registra el pago con cliente y plan.</div>
+                <div className="text-xs text-foreground-500">Registro rápido con 3 taps</div>
             </CardHeader>
 
             <CardBody className="space-y-4">
                 {loading && (
                     <div className="flex items-center gap-2 text-foreground-500">
-                        <Spinner size="sm" /> Cargando catálogos…
+                        <Spinner size="sm" /> Cargando…
                     </div>
                 )}
                 {err && !loading && (
@@ -208,177 +268,200 @@ export default function NuevaMembresiaCard({
                 )}
 
                 {!loading && (
-                    <>
-                        {/* --- Cliente --- */}
-                        <div className="space-y-2">
-                            <div className="text-sm font-medium">Cliente</div>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                <Select
-                                    label="Cliente"
-                                    selectedKeys={selCliente ? new Set([String(selCliente)]) : new Set([])}
-                                    onSelectionChange={(k) => setSelCliente(Number(Array.from(k)[0]))}
-                                >
-                                    {clientes.map((c) => (
-                                        <SelectItem key={c.id_cliente}>
-                                            {c.nombre} {c.apellido} • {c.cedula || c.correo || ""}
-                                        </SelectItem>
-                                    ))}
-                                </Select>
-                                <Button
-                                    variant="flat"
-                                    onPress={() => setMClienteOpen(true)}
-                                    startContent={<Icon icon="solar:user-plus-bold-duotone" />}
-                                >
-                                    Nuevo cliente
-                                </Button>
-                            </div>
-                        </div>
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* ===== Columna izquierda (2/3) ===== */}
+                        <div className="md:col-span-2 space-y-4">
+                            {/* Paso 1: Elige el plan */}
+                            <section className="space-y-2">
+                                <div className="text-sm font-medium">1) Elige el plan</div>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
+                                    {featuredPlans.map((p) => {
+                                        const active = selPlan === p.id_precio_membresia;
+                                        const labelTipo = (p.tipo || "").toUpperCase();
+                                        return (
+                                            <Button
+                                                key={`plan-${p.id_precio_membresia}`}
+                                                size="lg"
+                                                variant={active ? "solid" : "flat"}
+                                                color={active ? "primary" : "default"}
+                                                onPress={() => pickPlan(p)}
+                                                className={[
+                                                    "w-full h-20 px-5 justify-start text-left shadow-sm rounded-2xl",
+                                                    active ? "ring-2 ring-primary-400 shadow-md" : "hover:shadow-md",
+                                                ].join(" ")}
+                                                startContent={<Icon icon="solar:ticket-bold-duotone" className="text-2xl opacity-90" />}
+                                            >
+                                                <div className="flex flex-col leading-tight">
+                                                    <span className="text-base font-bold tracking-wide">{labelTipo}</span>
+                                                    <span className="text-sm opacity-80">{money(p.precio)}</span>
+                                                    <span className="text-xs opacity-60">Tap para seleccionar</span>
+                                                </div>
+                                            </Button>
+                                        );
+                                    })}
+                                </div>
+                            </section>
 
-                        <Divider />
-
-                        {/* --- Plan: botones rápidos --- */}
-                        <div className="space-y-2">
-                            <div className="text-sm font-medium">Plan</div>
-                            <div className="flex flex-wrap gap-2">
-                                {planes.map((p) => {
-                                    const active = selPlan === p.id_precio_membresia;
-                                    return (
-                                        <Button
-                                            key={`btn-${p.id_precio_membresia}`}
-                                            size="sm"
-                                            variant={active ? "solid" : "flat"}
-                                            color={active ? "primary" : "default"}
-                                            onPress={() => {
-                                                setSelPlan(p.id_precio_membresia);
-                                                setUnidad((p.tipo || "mes").toLowerCase());
-                                                setPrecioUnit(p.precio || 0);
-                                                setCant("1");
-                                            }}
+                            {/* Paso 2: Cliente */}
+                            <section className="space-y-2">
+                                <div className="text-sm font-medium">2) Cliente</div>
+                                <div className="flex gap-2 items-center">
+                                    <div className="min-w-[260px] max-w-[360px]">
+                                        <Select
+                                            aria-label="Cliente"
+                                            placeholder="Selecciona cliente"
+                                            items={clientes.map((c) => ({
+                                                id: String(c.id_cliente),
+                                                nombre: `${c.nombre} ${c.apellido}`,
+                                            }))}
+                                            selectedKeys={selCliente ? new Set([String(selCliente)]) : new Set([])}
+                                            onSelectionChange={(k) => setSelCliente(Number(Array.from(k)[0]))}
+                                            isLoading={!clientes.length && loading}
+                                            renderValue={(items) => items.map((i) => i.data?.nombre).join(", ")}
                                         >
-                                            {p.tipo?.toUpperCase()} · {money(p.precio)}
+                                            {(item) => <SelectItem key={item.id}>{item.nombre}</SelectItem>}
+                                        </Select>
+                                    </div>
+
+                                    <Button
+                                        size="sm"
+                                        variant="flat"
+                                        onPress={() => setMClienteOpen(true)}
+                                        startContent={<Icon icon="solar:user-plus-bold-duotone" />}
+                                    >
+                                        Nuevo
+                                    </Button>
+                                </div>
+                            </section>
+
+                            {/* Paso 3: Resumen / acciones rápidas */}
+                            <section className="space-y-3">
+                                <div className="flex flex-wrap gap-2">
+       
+                                    <Chip variant="flat">Cantidad: {cant}</Chip>
+                                    <Chip variant="flat">Expira: {expLocalDate}</Chip>
+                                    <Chip color="success" variant="flat">
+                                        Total: {money(total)}
+                                    </Chip>
+                                    {pct > 0 && (
+                                        <Chip color="primary" variant="flat">
+                                            Descuento: {pct}%
+                                        </Chip>
+                                    )}
+                                </div>
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <Button
+                                        size="sm"
+                                        variant="flat"
+                                        onPress={() => setShowDesc((s) => !s)}
+                                        startContent={<Icon icon="solar:discount-bold-duotone" />}
+                                    >
+                                        {showDesc ? "Ocultar descuento" : "Agregar descuento"}
+                                    </Button>
+
+                                    {showDesc && (
+                                        <>
+                                            <Select
+                                                aria-label="Atajos de descuento"
+                                                className="w-[160px]"
+                                                selectedKeys={new Set([String(pct)])}
+                                                onSelectionChange={(k) => {
+                                                    const v = Number(Array.from(k)[0] || 0);
+                                                    setDescuentoPct(v);
+                                                }}
+                                                items={[
+                                                    { id: "0", label: "0%" },
+                                                    { id: "10", label: "10%" },
+                                                    { id: "15", label: "15%" },
+                                                    { id: "20", label: "20%" },
+                                                    { id: "25", label: "25%" },
+                                                    { id: "50", label: "50%" },
+                                                    { id: "100", label: "100%" },
+                                                ]}
+                                                renderValue={(items) => items.map((i) => i.data?.label).join(", ")}
+                                            >
+                                                {(it: any) => <SelectItem key={it.id}>{it.label}</SelectItem>}
+                                            </Select>
+                                        </>
+                                    )}
+                                </div>
+                            </section>
+                        </div>
+
+                        {/* ===== Columna derecha (panel de pago) ===== */}
+                        <aside className="md:col-span-1">
+                            <div className="md:sticky md:top-4 space-y-3">
+                                <Card className="border">
+                                    <CardHeader className="py-3">
+                                        <div className="flex items-center gap-2">
+                                            <Icon icon="solar:wallet-2-bold-duotone" className="text-xl" />
+                                            <span className="font-semibold">Opciones de pago</span>
+                                        </div>
+                                    </CardHeader>
+                                    <CardBody className="space-y-3">
+                                        <Select
+                                            label="Método de pago"
+                                            items={metodos.map((m) => ({ id: String(m.id_metodo_pago), nombre: m.nombre }))}
+                                            selectedKeys={selMetodo ? new Set([String(selMetodo)]) : new Set([])}
+                                            onSelectionChange={(k) => setSelMetodo(Number(Array.from(k)[0]))}
+                                            isLoading={!metodos.length && loading}
+                                            isDisabled={!metodos.length}
+                                            renderValue={(items) => items.map((i) => i.data?.nombre).join(", ")}
+                                            className="w-full"
+                                        >
+                                            {(item) => <SelectItem key={item.id}>{item.nombre}</SelectItem>}
+                                        </Select>
+
+                                        <Select
+                                            label="Estado de pago"
+                                            items={estados.map((e) => ({ id: String(e.id_estado_pago), nombre: e.nombre }))}
+                                            selectedKeys={selEstado ? new Set([String(selEstado)]) : new Set([])}
+                                            onSelectionChange={(k) => setSelEstado(Number(Array.from(k)[0]))}
+                                            isLoading={!estados.length && loading}
+                                            isDisabled={!estados.length}
+                                            renderValue={(items) => items.map((i) => i.data?.nombre).join(", ")}
+                                            className="w-full"
+                                        >
+                                            {(item) => <SelectItem key={item.id}>{item.nombre}</SelectItem>}
+                                        </Select>
+
+                                        <div className="flex items-center justify-between rounded-xl border px-3 py-2 bg-content1/40">
+                                            <span className="text-sm opacity-80">Total a cobrar</span>
+                                            <span className="text-lg font-semibold">{money(total)}</span>
+                                        </div>
+
+                                        <Button
+                                            color="primary"
+                                            size="lg"
+                                            onPress={handleSave}
+                                            isLoading={saving}
+                                            isDisabled={!canSave}
+                                            className="w-full shadow-md hover:shadow-lg"
+                                            startContent={<Icon icon="solar:check-read-line-duotone" className="text-xl" />}
+                                        >
+                                            Confirmar y guardar
                                         </Button>
-                                    );
-                                })}
+                                    </CardBody>
+                                </Card>
                             </div>
-
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                <Select
-                                    label="Unidad"
-                                    selectedKeys={new Set([unidad])}
-                                    onSelectionChange={(k) => setUnidad(String(Array.from(k)[0]))}
-                                >
-                                    <SelectItem key="dia">Día</SelectItem>
-                                    <SelectItem key="mes">Mes</SelectItem>
-                                    <SelectItem key="año">Año</SelectItem>
-                                </Select>
-                                <Input label="Cantidad" type="number" value={cant} onValueChange={setCant} />
-                            </div>
-                        </div>
-
-                        <Divider />
-
-                        {/* --- Precios --- */}
-                        <div className="space-y-2">
-                            <div className="text-sm font-medium">Precio</div>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                <Input
-                                    label="Precio unitario"
-                                    type="number"
-                                    value={String(precioUnit)}
-                                    onValueChange={(v) => setPrecioUnit(Number(v) || 0)}
-                                />
-                                <Input label="Descuento" type="number" value={descuento} onValueChange={setDescuento} />
-                                <Input label="Total" isReadOnly value={String(total)} />
-                            </div>
-                        </div>
-
-                        <Divider />
-
-                        {/* --- Fechas --- */}
-                        <div className="space-y-2">
-                            <div className="text-sm font-medium">Fechas</div>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                <Input label="Fecha" type="date" value={fecha} onValueChange={setFecha} />
-                                <Input label="Hora (HH:mm)" type="time" value={hora} onValueChange={setHora} />
-                                <Input label="Expira (calculada)" value={expLocal} isReadOnly description="Según unidad y cantidad" />
-                            </div>
-                            <div className="flex flex-wrap gap-2">
-                                <Button size="sm" variant="flat" onPress={() => { setFecha(todayLocalYYYYMMDD()); }}>
-                                    Hoy
-                                </Button>
-                                <Button size="sm" variant="flat" onPress={() => {
-                                    const d = new Date(); d.setDate(d.getDate() + 1);
-                                    setFecha(`${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}`);
-                                }}>
-                                    Mañana
-                                </Button>
-                                <Button size="sm" variant="flat" onPress={() => { setHora(toLocalHHmm(new Date())); }}>
-                                    Ahora
-                                </Button>
-                            </div>
-                        </div>
-
-                        <Divider />
-
-                        {/* --- Pago --- */}
-                        <div className="space-y-2">
-                            <div className="text-sm font-medium">Pago</div>
-                            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                                <Select
-                                    label="Método de pago"
-                                    selectedKeys={selMetodo ? new Set([String(selMetodo)]) : new Set([])}
-                                    onSelectionChange={(k) => setSelMetodo(Number(Array.from(k)[0]))}
-                                >
-                                    {metodos.map((m) => (
-                                        <SelectItem key={m.id_metodo_pago}>{m.nombre}</SelectItem>
-                                    ))}
-                                </Select>
-                                <Select
-                                    label="Estado de pago"
-                                    selectedKeys={selEstado ? new Set([String(selEstado)]) : new Set([])}
-                                    onSelectionChange={(k) => setSelEstado(Number(Array.from(k)[0]))}
-                                >
-                                    {estados.map((e) => (
-                                        <SelectItem key={e.id_estado_pago}>{e.nombre}</SelectItem>
-                                    ))}
-                                </Select>
-                            </div>
-                        </div>
-
-                        <div className="flex items-center justify-between pt-2">
-                            <div className="text-sm text-foreground-600">
-                                Renovable: <span className="ml-2">{renovable ? "Sí" : "No"}</span>
-                            </div>
-                            <Button
-                                color="primary"
-                                onPress={handleSave}
-                                isLoading={saving}
-                                startContent={<Icon icon="solar:check-read-line-duotone" />}
-                            >
-                                Guardar membresía
-                            </Button>
-                        </div>
-                    </>
+                        </aside>
+                    </div>
                 )}
             </CardBody>
 
-            {/* Modal: nuevo cliente rápido (totalmente controlado) */}
+            {/* ===== Modal: nuevo cliente ===== */}
             <Modal
                 isOpen={mClienteOpen}
-                onOpenChange={(open) => setMClienteOpen(open)}
+                onOpenChange={setMClienteOpen}
                 backdrop="opaque"
                 isDismissable={false}
                 isKeyboardDismissDisabled
-                // Algunas versiones ignoran esto; lo reforzamos más abajo con stopPropagation.
                 // @ts-ignore
                 shouldCloseOnInteractOutside={() => false}
             >
-                <ModalContent
-                    // Bloquea burbujeo para que NADA externo dispare cierre
-                    onMouseDown={(e) => e.stopPropagation()}
-                    onClick={(e) => e.stopPropagation()}
-                >
-                    {(onClose) => (
+                <ModalContent onMouseDown={(e) => e.stopPropagation()} onClick={(e) => e.stopPropagation()}>
+                    {() => (
                         <>
                             <ModalHeader className="flex items-center gap-2">
                                 <Icon icon="solar:user-plus-bold-duotone" />
@@ -405,7 +488,10 @@ export default function NuevaMembresiaCard({
                                     </Button>
                                     <Button
                                         color="primary"
-                                        onPress={async () => { await createCliente(); setMClienteOpen(false); }}
+                                        onPress={async () => {
+                                            await createCliente();
+                                            setMClienteOpen(false);
+                                        }}
                                         startContent={<Icon icon="solar:check-read-line-duotone" />}
                                     >
                                         Guardar y cerrar
@@ -417,6 +503,7 @@ export default function NuevaMembresiaCard({
                 </ModalContent>
             </Modal>
 
+            {/* Info modals */}
             <InfoModal
                 open={okOpen}
                 type="success"
@@ -424,13 +511,7 @@ export default function NuevaMembresiaCard({
                 message="Se registró la membresía correctamente."
                 onClose={() => setOkOpen(false)}
             />
-            <InfoModal
-                open={errOpen}
-                type="error"
-                title="Error"
-                message={errMsg}
-                onClose={() => setErrOpen(false)}
-            />
+            <InfoModal open={errOpen} type="error" title="Error" message={errMsg} onClose={() => setErrOpen(false)} />
         </Card>
     );
 }

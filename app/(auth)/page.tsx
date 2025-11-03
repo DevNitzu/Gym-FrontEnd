@@ -57,13 +57,12 @@ export default function LoginPage() {
   const passErr = touched.pass && pass.length < 6 ? "Mínimo 6 caracteres." : "";
   const isValid = isEmail(email) && pass.length >= 6;
 
-  async function getEmpresaIdDelEmpleado(correo: string, token?: string): Promise<{ id_empresa: number | null, empleado?: any }> {
+  async function getEmpresaIdDelEmpleadoPorId(
+    idEmpleado: number,
+    token?: string
+  ): Promise<{ id_empresa: number | null; empleado?: any; asignaciones?: any[] }> {
     try {
-      // Opción ideal si tu backend la soporta:
-      // const url = `${API_BASE}/api/v1/empleados?correo=${encodeURIComponent(correo)}`;
-
-      // Opción genérica: traer todo y filtrar por correo:
-      const url = `${API_BASE}/api/v1/empleados`;
+      const url = `${API_BASE}/api/v1/empleadodto/empleado/${idEmpleado}`;
       const res = await fetch(url, {
         headers: {
           Accept: "application/json",
@@ -72,20 +71,57 @@ export default function LoginPage() {
         cache: "no-store",
         mode: "cors",
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status} al cargar empleados`);
+      if (!res.ok) throw new Error(`HTTP ${res.status} al cargar empleado`);
 
-      const lista = await res.json();
-      // La respuesta esperada es un array de objetos como el ejemplo que mostraste
-      const empleado = Array.isArray(lista)
-        ? lista.find((e: any) => (e?.correo || "").toLowerCase() === correo.toLowerCase())
-        : null;
+      const data = await res.json(); // { empleado, asignaciones }
+      const empleado = data?.empleado ?? null;
+      const asignaciones: any[] = Array.isArray(data?.asignaciones) ? data.asignaciones : [];
 
-      const id_empresa = empleado?.id_empresa ?? null;
-      return { id_empresa, empleado };
+      // Regla: preferir una asignación activa; si no, tomar la primera disponible
+      const asignacionElegida = asignaciones.find(a => a?.activo) ?? asignaciones[0] ?? null;
+      const id_empresa = asignacionElegida?.id_empresa ?? null;
+
+      return { id_empresa, empleado, asignaciones };
     } catch (e) {
+      console.error("getEmpresaIdDelEmpleadoPorId error:", e);
       return { id_empresa: null };
     }
   }
+
+  async function getEmpresaIdDelEmpleadoPorCorreo(
+    correo: string,
+    token?: string
+  ): Promise<{ id_empresa: number | null; empleado?: any; asignaciones?: any[] }> {
+    try {
+      // Ajusta esta URL a tu endpoint real de búsqueda por correo
+      const urlBuscar = `${API_BASE}/api/v1/empleados?correo=${encodeURIComponent(correo)}`;
+      const r1 = await fetch(urlBuscar, {
+        headers: {
+          Accept: "application/json",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+        cache: "no-store",
+        mode: "cors",
+      });
+      if (!r1.ok) throw new Error(`HTTP ${r1.status} al buscar empleado por correo`);
+
+      const lista = await r1.json(); // asume array o un objeto con results
+      const emp = Array.isArray(lista)
+        ? lista.find((e: any) => (e?.correo || "").toLowerCase() === correo.toLowerCase())
+        : (lista?.empleado ?? null);
+
+      const idEmpleado = emp?.id_empleado ?? emp?.id ?? null;
+      if (!idEmpleado) return { id_empresa: null };
+
+      // Reutiliza la función por ID
+      return await getEmpresaIdDelEmpleadoPorId(idEmpleado, token);
+    } catch (e) {
+      console.error("getEmpresaIdDelEmpleadoPorCorreo error:", e);
+      return { id_empresa: null };
+    }
+  }
+
+
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -95,64 +131,82 @@ export default function LoginPage() {
 
     setLoading(true);
     try {
-      const url = `${API_BASE}/api/v1/empleados/auth`;
+      const urlAuth = `${API_BASE}/api/v1/empleados/auth`;
 
-      // 1) Autenticación
-      let res = await fetch(url, {
+      // 1) Autenticación (intenta con {correo,...} y hace fallback a {email,...})
+      let res = await fetch(urlAuth, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", Accept: "application/json" },
         cache: "no-store",
         body: JSON.stringify({ correo: email, contrasena: pass }),
       });
 
-      // Fallback de compatibilidad
       if (!res.ok && (res.status === 400 || res.status === 401 || res.status === 422)) {
-        res = await fetch(url, {
+        res = await fetch(urlAuth, {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers: { "Content-Type": "application/json", Accept: "application/json" },
           cache: "no-store",
           body: JSON.stringify({ email, contrasena: pass }),
         });
       }
 
+      const data = await res.json().catch(() => ({} as any));
       if (!res.ok) {
-        const j = await res.json().catch(() => ({}));
-        throw new Error(j?.error || j?.message || "Credenciales incorrectas.");
+        const errMsg = data?.error || data?.message || "Credenciales incorrectas.";
+        throw new Error(errMsg);
       }
 
-      // 2) Parse de respuesta de auth
-      const data = await res.json().catch(() => ({}));
+      // 2) Token
       const token: string | undefined = data?.token || data?.access_token || data?.jwt;
-
       if (token) localStorage.setItem("auth:token", token);
       localStorage.setItem("auth:user_email", email);
 
-      // 3) Obtener id_empresa del empleado autenticado
-      // Si tu /auth YA devuelve id_empresa, úsalo directamente:
-      // const idEmpresaFromAuth = data?.id_empresa ?? data?.empresa?.id;
-      // if (idEmpresaFromAuth) { ...redirect... } else { ...consultar empleados... }
+      // 3) Extraer id_empleado desde la respuesta de /auth si viene
+      const idEmpleadoFromAuth: number | null =
+        data?.id_empleado ??
+        data?.empleado?.id_empleado ??
+        data?.user?.id_empleado ??
+        data?.user?.id ??
+        null;
 
-      let idEmpresa: number | null = data?.id_empresa ?? null;
+      // 4) Intentar tomar id_empresa directamente del /auth si ya viene
+      let idEmpresa: number | null =
+        data?.id_empresa ??
+        data?.empresa?.id ??
+        data?.empresa_id ??
+        null;
 
+      // 5) Si aún no tengo id_empresa, resolverlo por ID (preferido) o por correo
       if (!idEmpresa) {
-        const { id_empresa, empleado } = await getEmpresaIdDelEmpleado(email, token);
-        idEmpresa = id_empresa;
-        if (empleado) {
-          localStorage.setItem("auth:empleado", JSON.stringify(empleado));
+        if (typeof idEmpleadoFromAuth === "number") {
+          const r = await getEmpresaIdDelEmpleadoPorId(idEmpleadoFromAuth, token);
+          idEmpresa = r.id_empresa ?? null;
+          if (r?.empleado) {
+            localStorage.setItem("auth:empleado", JSON.stringify(r.empleado));
+          }
+        } else {
+          // Fallback: resolver por correo (requiere que tengas implementado ese helper)
+          const r = await getEmpresaIdDelEmpleadoPorCorreo(email, token);
+          idEmpresa = r.id_empresa ?? null;
+          if (r?.empleado) {
+            localStorage.setItem("auth:empleado", JSON.stringify(r.empleado));
+          }
         }
       }
 
       if (!idEmpresa) {
-        throw new Error("No se encontró id_empresa del empleado.");
+        throw new Error("No se pudo determinar la empresa del empleado.");
       }
 
       localStorage.setItem("auth:empresa", String(idEmpresa));
 
-      // 4) Redirigir a gimnasios con ?empresa=ID (respetando ?redirect si ya lo trae)
-      const hasEmpresaInRedirect = redirectTo.includes("empresa=");
+      // 6) Redirección: respeta ?redirect y agrega empresa=ID sin duplicar
+      const base = redirectTo || "/admin/gimnasios";
+      const hasQuery = base.includes("?");
+      const hasEmpresaInRedirect = /(^|[?&])empresa=/.test(base);
       const next = hasEmpresaInRedirect
-        ? redirectTo
-        : `${redirectTo}?empresa=${encodeURIComponent(String(idEmpresa))}`;
+        ? base
+        : `${base}${hasQuery ? "&" : "?"}empresa=${encodeURIComponent(String(idEmpresa))}`;
 
       router.push(next);
     } catch (err: any) {

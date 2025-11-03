@@ -11,7 +11,6 @@ import { SucursalView } from "../../lib/types";
 import MembresiasCrud from "./components/membresias/PlanesCrud";
 import ClientesCrud from "./components/clientes/ClientesCrud";
 import NuevaMembresiaCard from "./components/membresias/NuevaMembresiaCard";
-import ListaMembresias from "./components/membresias/ListaMembresias";
 import PersonalDeEsteGimnasio from "./components/personal/PersonalDeEsteGimnasio";
 
 export default function GestionSucursalPage() {
@@ -153,7 +152,6 @@ export default function GestionSucursalPage() {
                 <Tab key="ventas" title={<span className="flex items-center gap-2"><Icon icon="solar:card-bold-duotone" />Ventas</span>}>
                     <div className="space-y-4">
                         <NuevaMembresiaCard id_gimnasio={Number(gymIdNum)} onCreated={() => { /* hook si deseas refrescar */ }} />
-                        <ListaMembresias id_gimnasio={Number(gymIdNum)} />
                     </div>
                 </Tab>
 
