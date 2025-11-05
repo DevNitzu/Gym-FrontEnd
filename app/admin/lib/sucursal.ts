@@ -23,3 +23,4 @@ export function mapGymToSucursalView(g: ApiGimnasio, sid: string): SucursalView 
         estado, miembros: 0, aforo: 0, checkinsHoy: 0, telefono: g.telefono, correo: g.correo, fechaCreacion: g.fecha_creacion,
     };
 }
+

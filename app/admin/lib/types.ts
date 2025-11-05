@@ -28,7 +28,8 @@ export type ApiMetodoPago = { nombre: string; id_metodo_pago: number; activo: bo
 
 export type ApiCliente = {
     nombre: string; apellido: string; cedula: string; correo: string; telefono: string;
-    fecha_creacion: string; id_cliente: number; activo: boolean;
+    fecha_creacion: string; id_cliente: number; activo: boolean; id_gimnasio?: number | null;
+    contrasena?: string;
 };
 
 export type ApiMembresia = {

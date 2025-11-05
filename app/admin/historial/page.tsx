@@ -2,45 +2,63 @@
 
 import React from "react";
 import {
-    Button, Card, CardBody, CardHeader, Chip, Spinner, Tooltip, Kbd, Divider,
+    Button, Card, CardBody, CardHeader, Chip, Spinner, Tooltip, Input,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
-import { useRouter, useSearchParams } from "next/navigation";
+import Link from "next/link";
+import { useRouter } from "next/navigation";
 
 import type { ApiGimnasio } from "../lib/types";
 import { apiListGimnasiosByEmpresa } from "../lib/api";
 
-/* ---- Helpers de estado persistente ---- */
-function useEmpresaId(): string | undefined {
-    const sp = useSearchParams();
-    const q = sp.get("empresa") || undefined;
-    if (q && typeof window !== "undefined") {
-        try { localStorage.setItem("auth:empresaId", q); } catch { }
-        return q;
-    }
-    if (typeof window !== "undefined") {
-        const saved = localStorage.getItem("auth:empresaId") || undefined;
-        return saved || undefined;
-    }
-    return undefined;
+/* ---- Helpers ---- */
+function chipColor(activo?: number | boolean) {
+    const on = typeof activo === "boolean" ? activo : Number(activo) === 1;
+    return on ? ("success" as const) : ("danger" as const);
+}
+function chipLabel(activo?: number | boolean) {
+    const on = typeof activo === "boolean" ? activo : Number(activo) === 1;
+    return on ? "Abierta" : "Cerrada";
 }
 
-export default function Page() {
+type PageProps = {
+    searchParams: Promise<{ empresa?: string }>;
+};
+
+export default function Page({ searchParams }: PageProps) {
     const router = useRouter();
-    const sp = useSearchParams();
-    const empresaId = useEmpresaId();
+
+    // ✅ En Next 15: unwrap del Promise
+    const sp = React.use(searchParams);
+    const empresaFromURL = sp?.empresa ?? "";
+
+    const [empresaId, setEmpresaId] = React.useState<string>(empresaFromURL);
+
+    // Persistimos/recuperamos empresaId sin romper hidratación
+    React.useEffect(() => {
+        if (!empresaFromURL) {
+            try {
+                const saved = localStorage.getItem("auth:empresaId");
+                if (saved) setEmpresaId(saved);
+            } catch { }
+        } else {
+            try { localStorage.setItem("auth:empresaId", empresaFromURL); } catch { }
+        }
+    }, [empresaFromURL]);
 
     const [gyms, setGyms] = React.useState<ApiGimnasio[]>([]);
     const [loading, setLoading] = React.useState(false);
     const [err, setErr] = React.useState<string | null>(null);
+    const [q, setQ] = React.useState("");
 
     const loadGyms = React.useCallback(async () => {
         if (!empresaId) {
             setGyms([]);
-            setErr("Falta ?empresa en la URL o en localStorage.");
+            setErr("Falta el parámetro ?empresa.");
             return;
         }
-        setLoading(true); setErr(null);
+        setLoading(true);
+        setErr(null);
         try {
             const list = await apiListGimnasiosByEmpresa(empresaId);
             setGyms(list);
@@ -53,39 +71,65 @@ export default function Page() {
 
     React.useEffect(() => { loadGyms(); }, [loadGyms]);
 
-    const goHistorial = (id: number) => {
-        try { localStorage.setItem("gymId", String(id)); } catch { }
-        const qs = new URLSearchParams(sp.toString());
-        // conservamos ?empresa si existe
-        const suffix = qs.has("empresa") ? `?empresa=${qs.get("empresa")}` : "";
-        router.push(`/admin/historial/${id}${suffix}`);
-    };
+    const filtered = React.useMemo(() => {
+        const needle = q.trim().toLowerCase();
+        if (!needle) return gyms;
+        return gyms.filter((g) =>
+            [
+                g.nombre ?? "",
+                g.direccion ?? "",
+                g.telefono ?? "",
+                g.correo ?? "",
+                String(g.id_gimnasio),
+            ]
+                .join(" ")
+                .toLowerCase()
+                .includes(needle)
+        );
+    }, [gyms, q]);
 
     return (
         <Card className="border">
-            <CardHeader className="flex items-center justify-between">
+            <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                 <div className="flex items-center gap-2">
                     <Icon icon="solar:gym-bold-duotone" className="text-xl" />
                     <span className="font-semibold">Selecciona un gimnasio</span>
                     <Chip size="sm" variant="flat">{gyms.length}</Chip>
                 </div>
-                <Tooltip content="Refrescar">
-                    <Button
+
+                <div className="flex w-full sm:w-auto gap-2">
+                    <Input
                         size="sm"
-                        variant="flat"
-                        onPress={loadGyms}
-                        startContent={<Icon icon="solar:refresh-bold-duotone" />}
-                    >
-                        Refrescar
-                    </Button>
-                </Tooltip>
+                        className="w-full sm:w-64"
+                        startContent={<Icon icon="solar:magnifier-bold-duotone" />}
+                        placeholder="Buscar gimnasio…"
+                        value={q}
+                        onValueChange={setQ}
+                        isDisabled={loading}
+                    />
+                    <Tooltip content="Refrescar">
+                        <Button
+                            size="sm"
+                            variant="flat"
+                            onPress={loadGyms}
+                            startContent={<Icon icon="solar:refresh-bold-duotone" />}
+                            isDisabled={loading}
+                        >
+                            Refrescar
+                        </Button>
+                    </Tooltip>
+                </div>
             </CardHeader>
 
             <CardBody className="space-y-4">
                 {!empresaId && (
                     <div className="rounded-xl border border-warning-200 bg-warning-50 p-3 text-sm flex items-center gap-2">
-                        <Icon icon="solar:info-square-bold-duotone" className="text-warning-500 text-xl" />
-                        Agrega <code>?empresa=ID_EMPRESA</code> a la URL o guarda <code>auth:empresaId</code> en localStorage.
+                        <Icon
+                            icon="solar:info-square-bold-duotone"
+                            className="text-warning-500 text-xl"
+                        />
+                        Agrega <code>?empresa=ID_EMPRESA</code> a la URL
+                        (o guarda <code>auth:empresaId</code> en el navegador).
                     </div>
                 )}
 
@@ -102,38 +146,52 @@ export default function Page() {
                     </div>
                 )}
 
-                {!loading && gyms.length === 0 && empresaId && !err && (
-                    <div className="text-sm text-foreground-500">No se encontraron gimnasios para esta empresa.</div>
+                {!loading && empresaId && filtered.length === 0 && !err && (
+                    <div className="text-sm text-foreground-500">No se encontraron gimnasios.</div>
                 )}
 
-                {!loading && gyms.length > 0 && (
+                {!loading && filtered.length > 0 && (
                     <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-3 gap-3">
-                        {gyms.map((g) => (
-                            <Card
-                                key={g.id_gimnasio}
-                                className="border-sm hover:shadow-md transition-shadow cursor-pointer"
-                                onClick={() => goHistorial(g.id_gimnasio)}
-                            >
-                                <CardBody className="flex items-center justify-between">
-                                    <div>
-                                        <div className="font-semibold">
-                                            {g.nombre?.trim() || `Gimnasio #${g.id_gimnasio}`}
-                                        </div>
-                                        <div className="text-xs text-foreground-500">ID: {g.id_gimnasio}</div>
-                                    </div>
-                                    <Button size="sm" variant="flat" onPress={() => goHistorial(g.id_gimnasio)}>
-                                        Ver historial
-                                    </Button>
-                                </CardBody>
-                            </Card>
-                        ))}
+                        {filtered.map((g) => {
+                            const color = chipColor(g.activo);
+                            const label = chipLabel(g.activo);
+
+                            // ✅ Construimos el href con query ?empresa si existe
+                            const href = {
+                                pathname: `/admin/historial/${g.id_gimnasio}`,
+                                query: empresaId ? { empresa: empresaId } : undefined,
+                            };
+
+                            return (
+                                <Link
+                                    key={g.id_gimnasio}
+                                    href={href}
+                                    className="focus:outline-none rounded-xl"
+                                >
+                                    <Card
+                                        className="border-sm hover:shadow-md transition-shadow cursor-pointer h-full"
+                                        role="link"
+                                        tabIndex={0}
+                                        aria-label={`Abrir historial de ${g.nombre ?? `Gimnasio #${g.id_gimnasio}`}`}
+                                    >
+                                        <CardBody className="flex items-center justify-between">
+                                            <div className="flex items-center gap-3 min-w-0">
+                                                <span className="inline-flex h-10 w-10 items-center justify-center rounded-xl bg-default-100">
+                                                    <Icon icon="solar:buildings-2-bold-duotone" className="text-xl" />
+                                                </span>
+                                                <div className="min-w-0">
+                                                    <div className="truncate font-semibold">
+                                                        {g.nombre?.trim() || `Gimnasio #${g.id_gimnasio}`}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </CardBody>
+                                    </Card>
+                                </Link>
+                            );
+                        })}
                     </div>
                 )}
-
-                <Divider />
-                <div className="text-xs text-foreground-500 flex items-center gap-1">
-                    <Kbd>R</Kbd> para refrescar
-                </div>
             </CardBody>
         </Card>
     );

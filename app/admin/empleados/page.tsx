@@ -224,16 +224,13 @@ async function apiFetch(path: string, init?: RequestInit) {
 }
 
 /* ====================== API Empleados ====================== */
-/** Usa GET /api/v1/empleadodto/empresa/{id_empresa} (retorna { data: EmpleadoDTO[] }) */
+// GET /api/v1/empleadodto/empresa/{id_empresa}
 async function listEmpleadosByEmpresaDTO(id_empresa: number): Promise<EmpleadoUI[]> {
-    const json = await apiFetch(
-        `/api/v1/empleadodto/empresa/${encodeURIComponent(id_empresa)}`
-    );
+    const json = await apiFetch(`/api/v1/empleadodto/empresa/${encodeURIComponent(id_empresa)}`);
     const arr: EmpleadoDTO[] = Array.isArray(json?.data) ? json.data : [];
     return arr.map((dto) => normDtoToUI(dto, id_empresa));
 }
 
-/** CRUD directo para crear/actualizar/eliminar (si tu backend lo soporta) */
 async function createEmpleado(body: EmpleadoUI): Promise<EmpleadoUI> {
     const payload: Omit<ApiEmpleado, "id_empleado" | "activo"> & { contrasena?: string } = {
         nombre: body.nombre,
@@ -282,12 +279,8 @@ async function deleteEmpleadoApi(id_empleado: number): Promise<void> {
 }
 
 /* ====================== API Gimnasios ====================== */
-async function listGimnasiosByEmpresa(
-    id_empresa: number
-): Promise<GymOption[]> {
-    const data = await apiFetch(
-        `/api/v1/gimnasios/${encodeURIComponent(id_empresa)}`
-    );
+async function listGimnasiosByEmpresa(id_empresa: number): Promise<GymOption[]> {
+    const data = await apiFetch(`/api/v1/gimnasios/${encodeURIComponent(id_empresa)}`);
     const list: ApiGimnasio[] = Array.isArray(data)
         ? data
         : Array.isArray((data as any)?.items)
@@ -301,9 +294,7 @@ async function listGimnasiosByEmpresa(
 }
 
 /* ====================== API Empleado DTO & Asignaciones ====================== */
-async function fetchEmpleadoDTO(
-    id_empleado: number
-): Promise<EmpleadoDTO | null> {
+async function fetchEmpleadoDTO(id_empleado: number): Promise<EmpleadoDTO | null> {
     const dto = await apiFetch(`/api/v1/empleadodto/empleado/${id_empleado}`);
     if (!dto || !dto.empleado) return null;
     return dto as EmpleadoDTO;
@@ -326,23 +317,18 @@ async function createEmpleadoAsignacion(
 
 async function updateEmpleadoAsignacion(
     id_empleado_asignacion: number,
-    body: Pick<
-        ApiEmpleadoAsignacion,
-        "id_empresa" | "id_gimnasio" | "id_empleado" | "id_tipo_empleado"
-    >
+    body: Pick<ApiEmpleadoAsignacion, "id_empresa" | "id_gimnasio" | "id_empleado" | "id_tipo_empleado">
 ): Promise<ApiEmpleadoAsignacion> {
     return apiFetch(`/api/v1/empleado_asignacion/${id_empleado_asignacion}`, {
         method: "PUT",
         body: JSON.stringify({
             ...body,
-            id_tipo_empleado: Number(body.id_tipo_empleado ?? DEFAULT_TIPO), // 🔴 default 2
+            id_tipo_empleado: Number(body.id_tipo_empleado ?? DEFAULT_TIPO),
         }),
     });
 }
 
-async function deleteEmpleadoAsignacion(
-    id_empleado_asignacion: number
-): Promise<void> {
+async function deleteEmpleadoAsignacion(id_empleado_asignacion: number): Promise<void> {
     await apiFetch(`/api/v1/empleado_asignacion/${id_empleado_asignacion}`, {
         method: "DELETE",
     });
@@ -492,7 +478,6 @@ export default function EmpleadosPage() {
             return;
         }
 
-        // 🔴 Asegurar default en memoria antes de enviar
         if (!editing.id_tipo_empleado) {
             setEditing((p) => (p ? { ...p, id_tipo_empleado: DEFAULT_TIPO } : p));
         }
@@ -617,9 +602,7 @@ export default function EmpleadosPage() {
                                                 size="sm"
                                                 variant="flat"
                                                 onPress={() => openAsignaciones(e)}
-                                                startContent={
-                                                    <Icon icon="solar:map-point-bold-duotone" />
-                                                }
+                                                startContent={<Icon icon="solar:map-point-bold-duotone" />}
                                             >
                                                 Asignaciones
                                             </Button>
@@ -678,9 +661,7 @@ export default function EmpleadosPage() {
                                                             size="sm"
                                                             variant="flat"
                                                             onPress={() => openAsignaciones(e)}
-                                                            startContent={
-                                                                <Icon icon="solar:map-point-bold-duotone" />
-                                                            }
+                                                            startContent={<Icon icon="solar:map-point-bold-duotone" />}
                                                         >
                                                             Asignaciones
                                                         </Button>
@@ -860,8 +841,7 @@ function AsignacionesModal({
     const [savingId, setSavingId] = React.useState<number | "new" | null>(null);
 
     const gymOpts = React.useMemo(
-        () =>
-            [{ key: "0", label: "Sin asignación" }, ...gyms.map((g) => ({ key: g.key, label: g.label }))],
+        () => [{ key: "0", label: "Sin asignación" }, ...gyms.map((g) => ({ key: g.key, label: g.label }))],
         [gyms]
     );
 
@@ -870,80 +850,99 @@ function AsignacionesModal({
         return Number(empresa || 0);
     }, []);
 
+    /** Trae TODAS las asignaciones (plano) para poder cruzar y obtener el id_empleado_asignacion real */
     async function listEmpleadoAsignaciones(): Promise<ApiEmpleadoAsignacion[]> {
         const data = await apiFetch(`/api/v1/empleado_asignacion`);
         return Array.isArray(data) ? (data as ApiEmpleadoAsignacion[]) : [];
     }
 
-    // 🔁 Sustituye esta función en AsignacionesModal
-    async function ensureAsignacionIdForDelete(
+    /** Si una fila no tiene id_empleado_asignacion, lo resolvemos cruzando contra el listado plano */
+    async function ensureAsignacionId(
         r: ApiEmpleadoAsignacion
     ): Promise<number> {
         const current = Number(r.id_empleado_asignacion ?? 0);
         if (current > 0) return current;
 
-        // ✅ Buscar el id directamente en el DTO del empleado
-        const dto = await fetchEmpleadoDTO(Number(r.id_empleado));
-        if (!dto) return 0;
-
-        const match = (dto.asignaciones || []).find((a) =>
-            Number(a.id_empresa) === Number(r.id_empresa) &&
-            Number(a.id_gimnasio) === Number(r.id_gimnasio) &&
-            Number(a.id_tipo_empleado ?? DEFAULT_TIPO) === Number(r.id_tipo_empleado ?? DEFAULT_TIPO)
+        const all = await listEmpleadoAsignaciones();
+        const match = all.find(
+            (x) =>
+                Number(x.id_empleado) === Number(r.id_empleado) &&
+                Number(x.id_empresa) === Number(r.id_empresa) &&
+                Number(x.id_gimnasio) === Number(r.id_gimnasio) &&
+                Number(x.id_tipo_empleado ?? DEFAULT_TIPO) ===
+                Number(r.id_tipo_empleado ?? DEFAULT_TIPO)
         );
-
-        return match ? Number(match.id_empleado_asignacion ?? 0) : 0;
+        return Number(match?.id_empleado_asignacion ?? 0);
     }
 
+    // CARGA: DTO + listado plano -> inyectar IDs reales y renderizar
     React.useEffect(() => {
         let alive = true;
         (async () => {
+            setRows([]);
+            setMsg(null);
             if (!isOpen || !empleado?.id_empleado) return;
+
             try {
                 setLoading(true);
-                setMsg(null);
-
                 const [dto, all] = await Promise.all([
                     fetchEmpleadoDTO(empleado.id_empleado),
                     listEmpleadoAsignaciones(),
                 ]);
                 if (!alive) return;
 
+                // Mapear DTO a filas UI
                 const base: ApiEmpleadoAsignacion[] = (dto?.asignaciones || []).map(
-                    (a) => ({
-                        id_empleado_asignacion: Number(a.id_empleado_asignacion ?? 0),
-                        id_empleado: empleado.id_empleado!,
-                        id_empresa: Number(a.id_empresa ?? empresaId),
-                        id_gimnasio: Number(a.id_gimnasio ?? 0),
-                        id_tipo_empleado: Number(a.id_tipo_empleado ?? DEFAULT_TIPO), // 🔴 default 2
-                        activo: toBool(a.activo),
-                    })
+                    (a) => {
+                        // Buscar id real en el listado plano
+                        const m = all.find(
+                            (x) =>
+                                Number(x.id_empleado) === Number(empleado.id_empleado) &&
+                                Number(x.id_empresa ?? empresaId) === Number(a.id_empresa ?? empresaId) &&
+                                Number(x.id_gimnasio) === Number(a.id_gimnasio ?? 0) &&
+                                Number(x.id_tipo_empleado ?? DEFAULT_TIPO) ===
+                                Number(a.id_tipo_empleado ?? DEFAULT_TIPO)
+                        );
+                        return {
+                            id_empleado_asignacion: Number(m?.id_empleado_asignacion ?? 0),
+                            id_empleado: Number(empleado.id_empleado),
+                            id_empresa: Number(a.id_empresa ?? empresaId),
+                            id_gimnasio: Number(a.id_gimnasio ?? 0),
+                            id_tipo_empleado: Number(a.id_tipo_empleado ?? DEFAULT_TIPO),
+                            activo: true,
+                        };
+                    }
                 );
 
-                const resolved = base.map((r) => {
-                    if (r.id_empleado_asignacion && r.id_empleado_asignacion > 0) return r;
-                    const match = all.find(
-                        (x) =>
-                            Number(x.id_empleado) === r.id_empleado &&
-                            Number(x.id_empresa) === r.id_empresa &&
-                            Number(x.id_gimnasio) === r.id_gimnasio &&
-                            Number(x.id_tipo_empleado) === Number(r.id_tipo_empleado ?? DEFAULT_TIPO)
-                    );
-                    return match
-                        ? { ...r, id_empleado_asignacion: Number(match.id_empleado_asignacion ?? 0) }
-                        : r;
-                });
+                // De-duplicado por (empleado, empresa, gimnasio, tipo)
+                const uniqueMap = new Map<string, ApiEmpleadoAsignacion>();
+                for (const r of base) {
+                    const key = `${r.id_empleado}|${r.id_empresa}|${r.id_gimnasio}|${r.id_tipo_empleado}`;
+                    if (!uniqueMap.has(key)) uniqueMap.set(key, r);
+                    else {
+                        // Si hay duplicados, prioriza el que tenga ID real
+                        const prev = uniqueMap.get(key)!;
+                        if ((r.id_empleado_asignacion ?? 0) > 0 && (prev.id_empleado_asignacion ?? 0) === 0) {
+                            uniqueMap.set(key, r);
+                        }
+                    }
+                }
 
-                setRows(resolved);
+                setRows(Array.from(uniqueMap.values()));
             } catch (e: any) {
+                if (!alive) return;
                 setMsg(e?.message || "No se pudieron cargar las asignaciones.");
                 setRows([]);
             } finally {
-                setLoading(false);
+                if (alive) setLoading(false);
             }
         })();
+
         return () => {
             alive = false;
+            setRows([]);
+            setMsg(null);
+            setSavingId(null);
         };
     }, [isOpen, empleado?.id_empleado, empresaId]);
 
@@ -952,10 +951,10 @@ function AsignacionesModal({
         setRows((prev) => [
             {
                 id_empleado_asignacion: 0,
-                id_empleado: empleado.id_empleado!,
+                id_empleado: Number(empleado.id_empleado),
                 id_empresa: empresaId,
                 id_gimnasio: 0,
-                id_tipo_empleado: DEFAULT_TIPO, // 🔴 2
+                id_tipo_empleado: DEFAULT_TIPO,
                 activo: true,
             },
             ...prev,
@@ -964,12 +963,8 @@ function AsignacionesModal({
 
     async function saveRow(r: ApiEmpleadoAsignacion) {
         if (!empleado?.id_empleado) return;
-        const tipo = Number(r.id_tipo_empleado ?? DEFAULT_TIPO); // 🔴 2 si falta
-        setSavingId(
-            r.id_empleado_asignacion && r.id_empleado_asignacion > 0
-                ? r.id_empleado_asignacion
-                : "new"
-        );
+        const tipo = Number(r.id_tipo_empleado ?? DEFAULT_TIPO);
+        setSavingId(r.id_empleado_asignacion && r.id_empleado_asignacion > 0 ? r.id_empleado_asignacion : "new");
         try {
             if (r.id_empleado_asignacion && r.id_empleado_asignacion > 0) {
                 await updateEmpleadoAsignacion(r.id_empleado_asignacion, {
@@ -997,15 +992,15 @@ function AsignacionesModal({
             setSavingId(null);
         }
     }
-    // 🔁 Sustituye removeRow en AsignacionesModal
+
     async function removeRow(r: ApiEmpleadoAsignacion) {
         let idToDelete = Number(r.id_empleado_asignacion ?? 0);
         if (!idToDelete || idToDelete <= 0) {
-            idToDelete = await ensureAsignacionIdForDelete(r);
+            idToDelete = await ensureAsignacionId(r); // 👈 resolver ID antes de borrar
         }
 
-        // Si sigue sin ID, significa que nunca se creó en backend: basta con quitar la fila local
         if (!idToDelete || idToDelete <= 0) {
+            // No existe en servidor: solo limpiamos local
             setRows((prev) => prev.filter((x) => x !== r));
             setMsg("Asignación descartada (no existía en servidor).");
             return;
@@ -1017,26 +1012,13 @@ function AsignacionesModal({
         setSavingId(idToDelete);
         const snapshot = rows;
         try {
-            // Llamada DELETE
             await deleteEmpleadoAsignacion(idToDelete);
-            // Si el backend devolvió 204/200 está ok. Si devuelve 404, igual la removemos localmente.
-            setRows((prev) =>
-                prev.filter(
-                    (x) =>
-                        Number(x.id_empleado_asignacion ?? 0) !== idToDelete && x !== r
-                )
-            );
+            setRows((prev) => prev.filter((x) => Number(x.id_empleado_asignacion ?? 0) !== idToDelete && x !== r));
             setMsg("Asignación eliminada.");
         } catch (e: any) {
-            // Si el servidor responde 404, la fila ya no existe: la quitamos igual
             const msg = String(e?.message || "");
             if (msg.includes("404")) {
-                setRows((prev) =>
-                    prev.filter(
-                        (x) =>
-                            Number(x.id_empleado_asignacion ?? 0) !== idToDelete && x !== r
-                    )
-                );
+                setRows((prev) => prev.filter((x) => Number(x.id_empleado_asignacion ?? 0) !== idToDelete && x !== r));
                 setMsg("Asignación eliminada (no existía en el servidor).");
             } else {
                 setMsg(e?.message || "No se pudo eliminar la asignación.");
@@ -1046,7 +1028,6 @@ function AsignacionesModal({
             setSavingId(null);
         }
     }
-
 
     function setRow<K extends keyof ApiEmpleadoAsignacion>(
         r: ApiEmpleadoAsignacion,
@@ -1086,21 +1067,14 @@ function AsignacionesModal({
                         </ModalHeader>
                         <ModalBody className="space-y-4">
                             {msg && (
-                                <Chip
-                                    variant="flat"
-                                    color={msg.includes("No se pudo") ? "warning" : "success"}
-                                >
+                                <Chip variant="flat" color={msg.includes("No se pudo") ? "warning" : "success"}>
                                     {msg}
                                 </Chip>
                             )}
 
                             <div className="flex justify-between items-center">
                                 <div className="text-sm text-default-500">
-                                    {gymsLoading
-                                        ? "Cargando gimnasios…"
-                                        : gymsErr
-                                            ? gymsErr
-                                            : `Gimnasios disponibles: ${gyms.length}`}
+                                    {gymsLoading ? "Cargando gimnasios…" : gymsErr ? gymsErr : `Gimnasios disponibles: ${gyms.length}`}
                                 </div>
                                 <Button
                                     size="sm"
@@ -1123,25 +1097,16 @@ function AsignacionesModal({
                                             <TableHeader>
                                                 <TableColumn width={140}>ID</TableColumn>
                                                 <TableColumn>GIMNASIO</TableColumn>
-                                                <TableColumn className="text-right" width={200}>
-                                                    ACCIONES
-                                                </TableColumn>
+                                                <TableColumn className="text-right" width={200}>ACCIONES</TableColumn>
                                             </TableHeader>
                                             <TableBody emptyContent="Sin asignaciones">
                                                 {rows.map((r, idx) => (
-                                                    <TableRow
-                                                        key={(r.id_empleado_asignacion ?? 0) * 1000 + idx}
-                                                    >
+                                                    <TableRow key={`${r.id_empleado_asignacion || "new"}-${r.id_gimnasio}-${r.id_tipo_empleado}-${idx}`}>
                                                         <TableCell>
-                                                            {r.id_empleado_asignacion &&
-                                                                r.id_empleado_asignacion > 0 ? (
-                                                                <Chip size="sm" variant="flat">
-                                                                    #{r.id_empleado_asignacion}
-                                                                </Chip>
+                                                            {r.id_empleado_asignacion && r.id_empleado_asignacion > 0 ? (
+                                                                <Chip size="sm" variant="flat">#{r.id_empleado_asignacion}</Chip>
                                                             ) : (
-                                                                <Chip size="sm" color="primary" variant="flat">
-                                                                    Nuevo
-                                                                </Chip>
+                                                                <Chip size="sm" color="primary" variant="flat">Nuevo</Chip>
                                                             )}
                                                         </TableCell>
 
@@ -1150,9 +1115,7 @@ function AsignacionesModal({
                                                                 aria-label="Gimnasio"
                                                                 selectionMode="single"
                                                                 disallowEmptySelection
-                                                                selectedKeys={
-                                                                    new Set([String(r.id_gimnasio ?? 0)]) as unknown as Selection
-                                                                }
+                                                                selectedKeys={new Set([String(r.id_gimnasio ?? 0)]) as unknown as Selection}
                                                                 onSelectionChange={(keys: Selection) => {
                                                                     const picked = pickFirstKey(keys);
                                                                     const id = Number(picked) || 0;
@@ -1161,9 +1124,7 @@ function AsignacionesModal({
                                                                 items={gymOpts}
                                                                 className="min-w-[220px]"
                                                             >
-                                                                {(item) => (
-                                                                    <SelectItem key={item.key}>{item.label}</SelectItem>
-                                                                )}
+                                                                {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
                                                             </Select>
                                                         </TableCell>
 
@@ -1174,8 +1135,7 @@ function AsignacionesModal({
                                                                     variant="flat"
                                                                     isLoading={
                                                                         savingId ===
-                                                                        (r.id_empleado_asignacion &&
-                                                                            r.id_empleado_asignacion > 0
+                                                                        (r.id_empleado_asignacion && r.id_empleado_asignacion > 0
                                                                             ? r.id_empleado_asignacion
                                                                             : "new")
                                                                     }
@@ -1203,21 +1163,18 @@ function AsignacionesModal({
                                 </CardBody>
                             </Card>
 
-                            {/* Firma: solo nombres de gimnasios asignados (activos) */}
                             <div className="text-sm text-default-500">
                                 <span className="font-medium">Asignados: </span>
                                 {rows.length === 0
                                     ? "—"
                                     : rows
-                                        .filter((r) => toBool(r.activo) && (r.id_gimnasio ?? 0) > 0)
+                                        .filter((r) => (r.id_gimnasio ?? 0) > 0)
                                         .map((r) => getGymLabel(r.id_gimnasio))
                                         .join(" • ")}
                             </div>
                         </ModalBody>
                         <ModalFooter>
-                            <Button variant="light" onPress={onClose}>
-                                Cerrar
-                            </Button>
+                            <Button variant="light" onPress={onClose}>Cerrar</Button>
                         </ModalFooter>
                     </>
                 )}

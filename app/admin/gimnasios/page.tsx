@@ -2,15 +2,29 @@
 
 import React from "react";
 import {
-    Card, CardHeader, CardBody, CardFooter,
-    Button, Chip, Input, Spinner, Tooltip, Image, Modal, ModalContent, ModalHeader, ModalBody, ModalFooter, Checkbox
+    Card,
+    CardHeader,
+    CardBody,
+    CardFooter,
+    Button,
+    Chip,
+    Input,
+    Spinner,
+    Image,
+    Modal,
+    ModalContent,
+    ModalHeader,
+    ModalBody,
+    ModalFooter,
+    Checkbox,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import { useRouter, useSearchParams } from "next/navigation";
+import { authFetch, buildAuthHeaders } from "../lib/auth";
 
 type EstadoSucursal = "Abierta" | "Cerrada" | "Mantenimiento";
 
-/** Estructura exacta que devuelve tu API de gimnasios */
+/** API Gimnasio */
 type ApiGimnasio = {
     id_gimnasio: number;
     id_empresa: number;
@@ -18,11 +32,11 @@ type ApiGimnasio = {
     direccion: string;
     telefono: string;
     correo: string;
-    activo: number | boolean;      // 1|0 o true|false
-    fecha_creacion: string;        // "YYYY-MM-DD HH:mm:ss" o ISO
+    activo: number | boolean;
+    fecha_creacion: string;
 };
 
-/** Estructura exacta que devuelve tu API de empresa */
+/** API Empresa */
 type ApiEmpresa = {
     id_empresa: number;
     nombre: string;
@@ -36,13 +50,13 @@ type ApiEmpresa = {
 };
 
 type Row = {
-    gymId: string;
+    gymId: string;      // "G-010"
+    gymIdNum: number;   // 10
     gymNombre: string;
     ciudad: string;
     sucursalId: string;
-    miembros: number;
-    aforo: number;
-    checkinsHoy: number;
+    miembros: number;    // ← clientes_count (n° de clientes)
+    membresias: number;  // ← active_count (membresías activas)
     estado: EstadoSucursal;
     telefono: string;
     correo: string;
@@ -55,12 +69,10 @@ const estadoColor = (e: EstadoSucursal) =>
     e === "Abierta" ? "success" : e === "Cerrada" ? "danger" : "warning";
 
 const zpad3 = (n: number) => n.toString().padStart(3, "0");
+const toBool = (v: number | boolean) =>
+    typeof v === "boolean" ? v : Number(v) === 1;
 
-function toBool(v: number | boolean) {
-    return typeof v === "boolean" ? v : Number(v) === 1;
-}
-
-/** Resuelve logo_url relativo → absoluto */
+/** Logo relativo → absoluto */
 function getLogoUrl(logo_url?: string | null): string | null {
     if (!logo_url) return null;
     if (/^(https?:)?\/\//i.test(logo_url) || /^data:image\//i.test(logo_url)) return logo_url;
@@ -68,20 +80,21 @@ function getLogoUrl(logo_url?: string | null): string | null {
     return `${API_BASE}/${logo_url}`;
 }
 
-/** Mapea tu fila de BD a lo que la UI usa */
+/** Mapea gimnasio a fila de UI (incluye id numérico real) */
 function mapApiToRow(item: ApiGimnasio): Row {
-    const gymId = `G-${zpad3(Number(item.id_gimnasio))}`;
+    const gymIdNum = Number(item.id_gimnasio);
+    const gymId = `G-${zpad3(gymIdNum)}`;
     const sucursalId = `${gymId}-S1`;
     const estado: EstadoSucursal = toBool(item.activo) ? "Abierta" : "Cerrada";
 
     return {
         gymId,
+        gymIdNum,
         gymNombre: item.nombre ?? "Gimnasio",
         ciudad: item.direccion ?? "—",
         sucursalId,
-        miembros: 0,
-        aforo: 0,
-        checkinsHoy: 0,
+        miembros: 0,      // se llenará con clientes_count
+        membresias: 0,    // se llenará con active_count
         estado,
         telefono: item.telefono ?? "",
         correo: item.correo ?? "",
@@ -89,7 +102,75 @@ function mapApiToRow(item: ApiGimnasio): Row {
     };
 }
 
-/** ---- Modal de creación ---- */
+/* ===================== Servicios de conteo ===================== */
+
+function coerceCount(data: any): number {
+    if (typeof data === "number") return Number.isFinite(data) ? data : 0;
+    if (typeof data === "string") {
+        const n = Number(data);
+        return Number.isFinite(n) ? n : 0;
+    }
+    if (data && typeof data === "object") {
+        const maybe =
+            data.active_membresias_count ??
+            data.clientes_membresia_count ??
+            data.count ??
+            data.value ??
+            null;
+        const n = Number(maybe);
+        return Number.isFinite(n) ? n : 0;
+    }
+    return 0;
+}
+
+/** Membresías activas por gimnasio */
+async function fetchActiveCountByGym(id_gimnasio: number): Promise<number> {
+    const url = `${API_BASE}/api/v1/membresias/membresias_count/gimnasio/${encodeURIComponent(
+        id_gimnasio
+    )}`;
+
+    const res = await authFetch(url, {
+        headers: buildAuthHeaders(),
+        cache: "no-store",
+        mode: "cors",
+    });
+
+    if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        const err = new Error(`HTTP ${res.status} al cargar ${url} ${t ? `- ${t}` : ""}`) as any;
+        (err.__status = res.status);
+        throw err;
+    }
+
+    const data = await res.json().catch(() => null);
+    return coerceCount(data);
+}
+
+/** Clientes (miembros) por gimnasio - OJO: ruta con prefijo /membresias/ */
+async function fetchClientesCountByGym(id_gimnasio: number): Promise<number> {
+    const url = `${API_BASE}/api/v1/membresias/clientes_count/gimnasio/${encodeURIComponent(
+        id_gimnasio
+    )}`;
+
+    const res = await authFetch(url, {
+        headers: buildAuthHeaders(),
+        cache: "no-store",
+        mode: "cors",
+    });
+
+    if (!res.ok) {
+        const t = await res.text().catch(() => "");
+        const err = new Error(`HTTP ${res.status} al cargar ${url} ${t ? `- ${t}` : ""}`) as any;
+        (err.__status = res.status);
+        throw err;
+    }
+
+    const data = await res.json().catch(() => null);
+    return coerceCount(data);
+}
+
+/* ===================== Modal crear gym ===================== */
+
 function NewGymModal({
     open,
     onClose,
@@ -121,55 +202,41 @@ function NewGymModal({
         }
     }, [open]);
 
-    function isEmail(v: string) {
-        return !v || /\S+@\S+\.\S+/.test(v);
-    }
-
+    const isEmail = (v: string) => !v || /\S+@\S+\.\S+/.test(v);
     const canSave = nombre.trim().length > 0 && isEmail(correo) && !loading;
 
     const handleSubmit = async () => {
         try {
             setLoading(true);
             setError(null);
-
             const body = {
                 id_empresa: Number(empresaId),
                 nombre: nombre.trim(),
                 direccion: direccion.trim(),
                 telefono: telefono.trim(),
                 correo: correo.trim(),
-                activo, // el schema muestra boolean; si tu API acepta 1/0, cámbialo a Number(activo)
-                // fecha_creacion: se puede omitir para que el backend setee
+                activo,
             };
-
             const url = `${API_BASE}/api/v1/gimnasios`;
-            const res = await fetch(url, {
+            const res = await authFetch(url, {
                 method: "POST",
-                headers: {
-                    Accept: "application/json",
-                    "Content-Type": "application/json",
-                },
+                headers: buildAuthHeaders({ "Content-Type": "application/json" }),
                 mode: "cors",
                 body: JSON.stringify(body),
             });
-
             if (!res.ok) {
                 const t = await res.text().catch(() => "");
                 throw new Error(`HTTP ${res.status} al crear: ${t || "sin detalle"}`);
             }
-
-            const created: ApiGimnasio =
-                (await res.json()) as ApiGimnasio;
-
-            // Normaliza por si el backend devuelve boolean/number y fecha en ISO
+            const created: ApiGimnasio = await res.json();
             const creadoMapeado = mapApiToRow({
                 ...created,
-                activo: typeof created.activo === "boolean" ? created.activo : Number(created.activo),
-                fecha_creacion:
-                    created.fecha_creacion ??
-                    new Date().toISOString(),
+                activo:
+                    typeof created.activo === "boolean"
+                        ? created.activo
+                        : Number(created.activo),
+                fecha_creacion: created.fecha_creacion ?? new Date().toISOString(),
             });
-
             onCreated(creadoMapeado);
             onClose();
         } catch (e: any) {
@@ -204,9 +271,13 @@ function NewGymModal({
                         <Input
                             label="Correo"
                             type="email"
-                            isInvalid={!!correo && !/\S+@\S+\.\S+/.test(correo)}
-                            errorMessage={!!correo && !/\S+@\S+\.\S+/.test(correo) ? "Correo inválido" : undefined}
                             placeholder="user@example.com"
+                            isInvalid={!!correo && !/\S+@\S+\.\S+/.test(correo)}
+                            errorMessage={
+                                !!correo && !/\S+@\S+\.\S+/.test(correo)
+                                    ? "Correo inválido"
+                                    : undefined
+                            }
                             value={correo}
                             onValueChange={setCorreo}
                         />
@@ -219,15 +290,13 @@ function NewGymModal({
                     </div>
                     <div className="pt-1">
                         <Checkbox isSelected={activo} onValueChange={setActivo}>
-                            Activo (aparece como <span className="font-semibold">Abierta</span> en la lista)
+                            Activo (aparece como <span className="font-semibold">Abierta</span>{" "}
+                            en la lista)
                         </Checkbox>
                     </div>
-
                     {error && (
                         <Card className="border bg-danger-50">
-                            <CardBody className="text-danger-700 text-sm">
-                                {error}
-                            </CardBody>
+                            <CardBody className="text-danger-700 text-sm">{error}</CardBody>
                         </Card>
                     )}
                 </ModalBody>
@@ -235,7 +304,12 @@ function NewGymModal({
                     <Button variant="flat" onClick={onClose} isDisabled={loading}>
                         Cancelar
                     </Button>
-                    <Button color="primary" onClick={handleSubmit} isLoading={loading} isDisabled={!canSave}>
+                    <Button
+                        color="primary"
+                        onClick={handleSubmit}
+                        isLoading={loading}
+                        isDisabled={!canSave}
+                    >
                         Guardar
                     </Button>
                 </ModalFooter>
@@ -244,7 +318,8 @@ function NewGymModal({
     );
 }
 
-/** ---- Página ---- */
+/* ===================== Página ===================== */
+
 export default function GimnasiosPage() {
     const router = useRouter();
     const sp = useSearchParams();
@@ -255,7 +330,9 @@ export default function GimnasiosPage() {
     const [empresa, setEmpresa] = React.useState<ApiEmpresa | null>(null);
     const [error, setError] = React.useState<string | null>(null);
     const [isNewOpen, setIsNewOpen] = React.useState(false);
+    const [authExpired, setAuthExpired] = React.useState(false);
 
+    /** ===== Carga principal ===== */
     React.useEffect(() => {
         let alive = true;
         (async () => {
@@ -263,13 +340,26 @@ export default function GimnasiosPage() {
                 setError(null);
                 setRows(null);
                 setEmpresa(null);
+                setAuthExpired(false);
 
-                const gymsUrl = `${API_BASE}/api/v1/gimnasios/${encodeURIComponent(empresaId)}`;
-                const empUrl = `${API_BASE}/api/v1/empresas/${encodeURIComponent(empresaId)}`;
+                const gymsUrl = `${API_BASE}/api/v1/gimnasios/${encodeURIComponent(
+                    empresaId
+                )}`;
+                const empUrl = `${API_BASE}/api/v1/empresas/${encodeURIComponent(
+                    empresaId
+                )}`;
 
                 const [gymsRes, empRes] = await Promise.all([
-                    fetch(gymsUrl, { headers: { Accept: "application/json" }, cache: "no-store", mode: "cors" }),
-                    fetch(empUrl, { headers: { Accept: "application/json" }, cache: "no-store", mode: "cors" }),
+                    authFetch(gymsUrl, {
+                        headers: buildAuthHeaders(),
+                        cache: "no-store",
+                        mode: "cors",
+                    }),
+                    authFetch(empUrl, {
+                        headers: buildAuthHeaders(),
+                        cache: "no-store",
+                        mode: "cors",
+                    }),
                 ]);
 
                 if (!gymsRes.ok) throw new Error(`HTTP ${gymsRes.status} al cargar ${gymsUrl}`);
@@ -278,16 +368,47 @@ export default function GimnasiosPage() {
                 const gymsData = await gymsRes.json();
                 const empData: ApiEmpresa = await empRes.json();
 
-                const list: ApiGimnasio[] = Array.isArray(gymsData)
+                const gymsList: ApiGimnasio[] = Array.isArray(gymsData)
                     ? gymsData
                     : Array.isArray((gymsData as any)?.items)
                         ? (gymsData as any).items
                         : [];
 
-                const mapped = list.map(mapApiToRow);
+                const mapped = gymsList.map(mapApiToRow);
+
+                // === Rellenar conteos por gym (clientes_count = miembros, active_count = membresias)
+                try {
+                    const counts = await Promise.all(
+                        mapped.map(async (r) => {
+                            try {
+                                const [miembros, membresias] = await Promise.all([
+                                    fetchClientesCountByGym(r.gymIdNum), // ← /api/v1/membresias/clientes_count/gimnasio/{id}
+                                    fetchActiveCountByGym(r.gymIdNum),   // ← /api/v1/membresias/active_count/gimnasio/{id}
+                                ]);
+                                return { id: r.gymIdNum, miembros, membresias };
+                            } catch (err: any) {
+                                if (err?.__status === 401) setAuthExpired(true);
+                                return { id: r.gymIdNum, miembros: 0, membresias: 0 };
+                            }
+                        })
+                    );
+
+                    const byIdMiembros = new Map<number, number>(counts.map(c => [c.id, c.miembros]));
+                    const byIdMembresias = new Map<number, number>(counts.map(c => [c.id, c.membresias]));
+
+                    for (const r of mapped) {
+                        r.miembros = byIdMiembros.get(r.gymIdNum) ?? 0;
+                        r.membresias = byIdMembresias.get(r.gymIdNum) ?? 0;
+                    }
+                } catch (e) {
+                    if (process.env.NODE_ENV !== "production") {
+                        console.warn("Fallo al obtener conteos de miembros/membresías:", e);
+                    }
+                }
+
 
                 if (alive) {
-                    setRows(mapped);
+                    setRows([...mapped]); // asegura re-render
                     setEmpresa(empData);
                 }
             } catch (e: any) {
@@ -295,58 +416,42 @@ export default function GimnasiosPage() {
             }
         })();
 
-        return () => { alive = false; };
+        return () => {
+            alive = false;
+        };
     }, [empresaId]);
 
+    /** ===== Filtro ===== */
     const filtered = React.useMemo(() => {
         if (!rows) return null;
         const s = q.trim().toLowerCase();
         if (!s) return rows;
         return rows.filter((r) =>
-            [
-                r.gymId,
-                r.gymNombre,
-                r.ciudad,
-                r.sucursalId,
-                r.telefono,
-                r.correo,
-                r.fechaCreacion ?? "",
-            ]
+            [r.gymId, r.gymNombre, r.ciudad, r.sucursalId, r.telefono, r.correo, r.fechaCreacion ?? ""]
                 .join(" ")
                 .toLowerCase()
                 .includes(s)
         );
     }, [rows, q]);
 
-    const handleCardKeyDown = (e: React.KeyboardEvent, href: string) => {
-        if (e.key === "Enter" || e.key === " ") {
-            e.preventDefault();
-            router.push(href);
-        }
-    };
-
+    /** Header: empresa + reloj */
     const logo = getLogoUrl(empresa?.logo_url);
     const empresaIniciales =
         (empresa?.nombre || "")
             .split(/\s+/)
-            .map(w => w[0])
+            .map((w) => w[0])
             .slice(0, 2)
             .join("")
             .toUpperCase() || "EM";
 
-    // --- Reloj Guayaquil ---
     function useGuayaquilNow() {
         const [now, setNow] = React.useState<Date | null>(null);
-
         React.useEffect(() => {
-            // Evita desajustes de hidratación: inicia después del mount
             setNow(new Date());
             const id = setInterval(() => setNow(new Date()), 1000);
             return () => clearInterval(id);
         }, []);
-
         if (!now) return { time: "—", date: "" };
-
         const time = new Intl.DateTimeFormat("es-EC", {
             timeZone: "America/Guayaquil",
             hour: "2-digit",
@@ -354,7 +459,6 @@ export default function GimnasiosPage() {
             second: "2-digit",
             hour12: false,
         }).format(now);
-
         const date = new Intl.DateTimeFormat("es-EC", {
             timeZone: "America/Guayaquil",
             weekday: "short",
@@ -362,10 +466,8 @@ export default function GimnasiosPage() {
             month: "short",
             year: "numeric",
         }).format(now);
-
         return { time, date };
     }
-
     function GuayaquilClock() {
         const { time, date } = useGuayaquilNow();
         return (
@@ -380,10 +482,35 @@ export default function GimnasiosPage() {
         );
     }
 
-
     return (
-        <div className="space-y-6">
-            {/* Header con logo y datos de empresa */}
+        
+        <div className="relative z-10 space-y-6">
+            {/* Aviso de sesión expirada (401) */}
+            {authExpired && (
+                <Card className="border">
+                    <CardBody className="text-center">
+                        <p className="font-medium">Sesión expirada (401).</p>
+                        <p className="text-sm text-foreground-500 mt-1">
+                            Vuelve a iniciar sesión para ver los conteos por gimnasio.
+                        </p>
+                        <Button
+                            className="mt-3"
+                            color="primary"
+                            startContent={<Icon icon="solar:login-2-bold-duotone" />}
+                            onClick={() => {
+                                try {
+                                    localStorage.removeItem("auth:token");
+                                } catch { }
+                                location.href = "/";
+                            }}
+                        >
+                            Iniciar sesión
+                        </Button>
+                    </CardBody>
+                </Card>
+            )}
+
+            {/* Header empresa */}
             <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-3 min-w-0">
                     <div className="h-12 w-12 rounded-xl bg-default-100 flex items-center justify-center overflow-hidden">
@@ -395,21 +522,22 @@ export default function GimnasiosPage() {
                                 removeWrapper
                             />
                         ) : (
-                            <span className="text-2xl font-bold text-foreground-500"> {empresaIniciales}</span>
+                            <span className="text-2xl font-bold text-foreground-500">
+                                {empresaIniciales}
+                            </span>
                         )}
                     </div>
                     <div className="min-w-0">
                         <h1 className="text-2xl font-bold truncate">
                             {empresa?.nombre || "Empresa"}
                         </h1>
-                        {(empresa?.correo && empresa?.telefono) && (
+                        {empresa?.correo && empresa?.telefono && (
                             <p className="text-sm text-foreground-500 truncate">
                                 {empresa?.correo && <span className="mr-3">{empresa.correo}</span>}
                             </p>
                         )}
                     </div>
                 </div>
-
                 <div className="flex items-center gap-5">
                     <GuayaquilClock />
                     <Button
@@ -420,7 +548,6 @@ export default function GimnasiosPage() {
                         Nuevo Gimnasio
                     </Button>
                 </div>
-
             </div>
 
             {/* Filtro */}
@@ -434,7 +561,9 @@ export default function GimnasiosPage() {
                     isDisabled={!rows && !error}
                 />
                 <div className="ml-auto text-sm text-foreground-500">
-                    {rows ? `${filtered?.length ?? 0} resultado${(filtered?.length ?? 0) === 1 ? "" : "s"}` : ""}
+                    {rows
+                        ? `${filtered?.length ?? 0} resultado${(filtered?.length ?? 0) === 1 ? "" : "s"}`
+                        : ""}
                 </div>
             </div>
 
@@ -476,7 +605,12 @@ export default function GimnasiosPage() {
                                 onClick={() => router.push(href)}
                                 role="button"
                                 tabIndex={0}
-                                onKeyDown={(e) => handleCardKeyDown(e, href)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" || e.key === " ") {
+                                        e.preventDefault();
+                                        router.push(href);
+                                    }
+                                }}
                             >
                                 <CardHeader className="justify-between">
                                     <div className="min-w-0">
@@ -502,7 +636,6 @@ export default function GimnasiosPage() {
                                                             {r.correo}
                                                         </span>
                                                     )}
-
                                                 </div>
                                             </div>
                                         </div>
@@ -513,18 +646,14 @@ export default function GimnasiosPage() {
                                 </CardHeader>
 
                                 <CardBody className="pt-0">
-                                    <div className="grid grid-cols-3 gap-2 text-center text-sm">
+                                    <div className="grid grid-cols-2 gap-2 text-center text-sm">
                                         <div className="rounded-lg bg-default-100 p-2">
                                             <div className="text-xs text-foreground-500">Miembros</div>
                                             <div className="font-semibold">{r.miembros}</div>
                                         </div>
                                         <div className="rounded-lg bg-default-100 p-2">
-                                            <div className="text-xs text-foreground-500">Aforo</div>
-                                            <div className="font-semibold">{r.aforo}</div>
-                                        </div>
-                                        <div className="rounded-lg bg-default-100 p-2">
-                                            <div className="text-xs text-foreground-500">Check-ins hoy</div>
-                                            <div className="font-semibold">{r.checkinsHoy}</div>
+                                            <div className="text-xs text-foreground-500">Membresías</div>
+                                            <div className="font-semibold">{r.membresias}</div>
                                         </div>
                                     </div>
                                 </CardBody>
@@ -553,9 +682,9 @@ export default function GimnasiosPage() {
                 open={isNewOpen}
                 onClose={() => setIsNewOpen(false)}
                 empresaId={empresaId}
-                onCreated={(nuevo) => {
-                    setRows((prev) => (prev ? [nuevo, ...prev] : [nuevo]));
-                }}
+                onCreated={(nuevo) =>
+                    setRows((prev) => (prev ? [nuevo, ...prev] : [nuevo]))
+                }
             />
         </div>
     );

@@ -120,6 +120,14 @@ export async function apiListClientes(): Promise<ApiCliente[]> {
     const json = await res.json();
     return Array.isArray(json) ? json : [];
 }
+
+
+export async function apiGetCliente(id: number): Promise<ApiCliente> {
+    const res = await authFetch(`${API_BASE}/api/v1/clientes/${id}`, { headers: buildAuthHeaders() });
+    if (!res.ok) throw new Error(`HTTP ${res.status} al obtener cliente`);
+    return (await res.json()) as ApiCliente;
+}
+
 export async function apiCreateCliente(body: { nombre: string; apellido: string; cedula: string; correo: string; telefono: string; contrasena?: string }) {
     const res = await authFetch(`${API_BASE}/api/v1/clientes`, {
         method: "POST", headers: buildAuthHeaders({ "Content-Type": "application/json" }),
@@ -224,3 +232,4 @@ export async function apiListMembresiasIdsByGym(id_gimnasio: number): Promise<nu
         .map((x: any) => Number(x?.id_membresia))
         .filter((n: number) => Number.isFinite(n));
 }
+

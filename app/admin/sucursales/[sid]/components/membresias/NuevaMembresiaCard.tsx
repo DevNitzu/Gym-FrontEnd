@@ -15,6 +15,8 @@ import {
     SelectItem,
     Spinner,
     Chip,
+    Autocomplete,
+    AutocompleteItem,
 } from "@heroui/react";
 import { Icon } from "@iconify/react";
 import {
@@ -101,6 +103,38 @@ export default function NuevaMembresiaCard({
     const [errOpen, setErrOpen] = React.useState(false);
     const [errMsg, setErrMsg] = React.useState("");
 
+    /* ===== Borrador para prellenar modal de cliente ===== */
+    const [draftCliente, setDraftCliente] = React.useState<Partial<ApiCliente>>({});
+
+    /* ===== Búsqueda (LIKE) en Paso 2 ===== */
+    const [cliText, setCliText] = React.useState<string>(""); // lo que escribe el usuario
+
+    const normalized = (s?: string) =>
+        (s || "")
+            .normalize("NFD")
+            .replace(/[\u0300-\u036f]/g, "")
+            .toLowerCase();
+
+    const clienteMatches = React.useMemo(() => {
+        const q = normalized(cliText);
+        if (!q) return clientes;
+        return clientes.filter((c) => {
+            const full = `${c.nombre ?? ""} ${c.apellido ?? ""}`.trim();
+            return (
+                normalized(full).includes(q) ||
+                normalized(c.cedula).includes(q) ||
+                normalized(c.telefono).includes(q) ||
+                normalized(c.correo).includes(q)
+                // ⚠️ Evita buscar por contraseña en UI/cliente por seguridad.
+            );
+        });
+    }, [cliText, clientes]);
+
+    const selectedClienteObj = React.useMemo(
+        () => clientes.find((c) => c.id_cliente === selCliente) || null,
+        [clientes, selCliente]
+    );
+
     /* ===== Carga inicial ===== */
     const reloadBasics = React.useCallback(async () => {
         setLoading(true);
@@ -118,11 +152,11 @@ export default function NuevaMembresiaCard({
             setMetodos(mp || []);
             setEstados(ep || []);
 
-            if (c?.length && !selCliente) setSelCliente(c[0].id_cliente);
             if (mp?.length && !selMetodo) setSelMetodo(mp[0].id_metodo_pago);
             if (ep?.length && !selEstado) setSelEstado(ep[0].id_estado_pago);
 
-            const planMes = p.find((x) => (x.tipo || "").toLowerCase() === "mes") || p[0];
+            const planMes =
+                p.find((x) => (x.tipo || "").toLowerCase() === "mes") || p[0];
             if (planMes) {
                 setSelPlan(planMes.id_precio_membresia);
                 setUnidad((planMes.tipo || "mes").toLowerCase());
@@ -134,7 +168,7 @@ export default function NuevaMembresiaCard({
         } finally {
             setLoading(false);
         }
-    }, [id_gimnasio, selCliente, selMetodo, selEstado]);
+    }, [id_gimnasio, selMetodo, selEstado]);
 
     React.useEffect(() => {
         reloadBasics();
@@ -147,17 +181,13 @@ export default function NuevaMembresiaCard({
             setPrecioUnit(plan.precio || 0);
             setCant("1");
         }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [selPlan, planes]);
 
     /* ===== Derivados ===== */
-    const selectedCliente = React.useMemo(
-        () => clientes.find((c) => c.id_cliente === selCliente) || null,
-        [clientes, selCliente]
-    );
-
-    // Clamp 0..100 y calculo
+    const selectedCliente = selectedClienteObj;
     const pct = Math.min(100, Math.max(0, Math.round(Number(descuentoPct) || 0)));
-    const pctFrac = pct / 100; // para el backend/cálculo
+    const pctFrac = pct / 100;
     const subtotal = (precioUnit || 0) * (Number(cant) || 0);
     const total = Math.max(0, subtotal * (1 - pctFrac));
     const canSave = !!(selCliente && selPlan && selMetodo && selEstado);
@@ -166,7 +196,8 @@ export default function NuevaMembresiaCard({
     const featuredPlans = React.useMemo(() => {
         if (!planes?.length) return [] as ApiPrecioMembresia[];
         const idx: Record<string, ApiPrecioMembresia | undefined> = {};
-        for (const t of ["dia", "mes", "año"]) idx[t] = planes.find((p) => (p.tipo || "").toLowerCase() === t);
+        for (const t of ["dia", "mes", "año"])
+            idx[t] = planes.find((p) => (p.tipo || "").toLowerCase() === t);
         const base = [idx["dia"], idx["mes"], idx["año"]].filter(Boolean) as ApiPrecioMembresia[];
         if (base.length >= 3) return base.slice(0, 3);
         const taken = new Set(base.map((p) => p.id_precio_membresia));
@@ -183,7 +214,17 @@ export default function NuevaMembresiaCard({
         setCant("1");
     };
 
-    /* ===== Crear cliente rápido ===== */
+    /* ===== Helpers: prellenar modal desde texto libre ===== */
+    const prefillFromFreeText = (text: string) => {
+        const raw = (text || "").trim();
+        const parts = raw.split(/\s+/);
+        const nombre = parts.shift() || raw;
+        const apellido = parts.join(" ");
+        setDraftCliente({ nombre, apellido, contrasena: "12345678" });
+        setMClienteOpen(true);
+    };
+
+    /* ===== Crear cliente rápido (modal) ===== */
     const createCliente = async () => {
         try {
             const nombre = (document.getElementById("ncli-nombre") as HTMLInputElement)?.value?.trim();
@@ -191,20 +232,34 @@ export default function NuevaMembresiaCard({
             const cedula = (document.getElementById("ncli-cedula") as HTMLInputElement)?.value?.trim();
             const correo = (document.getElementById("ncli-correo") as HTMLInputElement)?.value?.trim();
             const telefono = (document.getElementById("ncli-telefono") as HTMLInputElement)?.value?.trim();
+            const contrasenaInput = (document.getElementById("ncli-contrasena") as HTMLInputElement)?.value?.trim();
 
             if (!nombre || !apellido) {
                 setErrMsg("Nombre y apellido son obligatorios.");
                 setErrOpen(true);
                 return;
             }
-            const cli = await apiCreateCliente({ nombre, apellido, cedula, correo, telefono });
+
+            // 🔐 Regla: por defecto la contraseña = cédula (y si no hay cédula, fallback opcional)
+            const contrasena = contrasenaInput || cedula;
+
+            const cli = await apiCreateCliente({ nombre, apellido, cedula, correo, telefono, contrasena });
             setClientes((s) => [cli, ...(s || [])]);
             setSelCliente(cli.id_cliente);
+            setCliText(`${cli.nombre ?? ""} ${cli.apellido ?? ""}`.trim());
             setMClienteOpen(false);
+            setDraftCliente({});
         } catch (e: any) {
             setErrMsg(e?.message || "No se pudo crear el cliente.");
             setErrOpen(true);
         }
+    };
+
+    /* ===== Crear desde texto libre del Autocomplete -> ABRIR MODAL ===== */
+    const createFromFreeText = async () => {
+        const raw = (cliText || "").trim();
+        if (!raw) return;
+        prefillFromFreeText(raw);
     };
 
     /* ===== Guardar membresía ===== */
@@ -222,7 +277,6 @@ export default function NuevaMembresiaCard({
                 unidad_duracion: unidad,
                 cantidad_duracion: cantidad,
                 precio_unitario: Number(precioUnit),
-                // Guardamos el DESCUENTO como fracción (0..1) para el backend
                 descuento: pctFrac,
                 precio_total: total,
                 fecha_creacion: new Date().toISOString(),
@@ -236,7 +290,9 @@ export default function NuevaMembresiaCard({
             setOkOpen(true);
             await reloadBasics();
         } catch (e: any) {
-            setErrMsg(e?.__is401 ? "Sesión expirada (401). Inicia sesión." : e?.message || "No se pudo crear la membresía.");
+            setErrMsg(
+                e?.__is401 ? "Sesión expirada (401). Inicia sesión." : e?.message || "No se pudo crear la membresía."
+            );
             setErrOpen(true);
         } finally {
             setSaving(false);
@@ -251,7 +307,7 @@ export default function NuevaMembresiaCard({
                     <Icon icon="solar:card-bold-duotone" className="text-xl" />
                     <span className="font-semibold">Nueva membresía</span>
                 </div>
-                <div className="text-xs text-foreground-500">Registro rápido con 3 taps</div>
+                <div className="text-xs text-foreground-500">Registro rápido con 3 pasos</div>
             </CardHeader>
 
             <CardBody className="space-y-4">
@@ -302,31 +358,109 @@ export default function NuevaMembresiaCard({
                                 </div>
                             </section>
 
-                            {/* Paso 2: Cliente */}
+                            {/* Paso 2: Cliente (Autocomplete: escribir LIKE o seleccionar) */}
                             <section className="space-y-2">
                                 <div className="text-sm font-medium">2) Cliente</div>
-                                <div className="flex gap-2 items-center">
-                                    <div className="min-w-[260px] max-w-[360px]">
-                                        <Select
-                                            aria-label="Cliente"
-                                            placeholder="Selecciona cliente"
-                                            items={clientes.map((c) => ({
-                                                id: String(c.id_cliente),
-                                                nombre: `${c.nombre} ${c.apellido}`,
-                                            }))}
-                                            selectedKeys={selCliente ? new Set([String(selCliente)]) : new Set([])}
-                                            onSelectionChange={(k) => setSelCliente(Number(Array.from(k)[0]))}
+
+                                <div className="flex flex-wrap items-center gap-2">
+                                    <div className="min-w-[280px] w-full sm:w-[380px]">
+                                        <Autocomplete
+                                            label="Buscar o seleccionar cliente"
+                                            placeholder="Escribe nombre, cédula, teléfono o correo…"
+                                            inputValue={cliText}
+                                            onInputChange={(val) => {
+                                                setCliText(val);
+                                            }}
+                                            selectedKey={selCliente ? String(selCliente) : null}
+                                            onSelectionChange={(key) => {
+                                                if (key) {
+                                                    const id = Number(key);
+                                                    const c = clientes.find((x) => x.id_cliente === id);
+                                                    if (c) {
+                                                        setSelCliente(id);
+                                                        setCliText(`${c?.nombre ?? ""} ${c?.apellido ?? ""}`.trim());
+                                                        return;
+                                                    }
+                                                    // Si llega un key que no corresponde, abrimos modal desde el texto actual
+                                                    if (cliText.trim()) prefillFromFreeText(cliText);
+                                                    setSelCliente(null);
+                                                    return;
+                                                }
+                                                // Sin key (valor libre o se limpió)
+                                                const exact = clienteMatches.some(
+                                                    (c) =>
+                                                        `${(c.nombre ?? "").trim()} ${(c.apellido ?? "").trim()}`
+                                                            .trim()
+                                                            .toLowerCase() === cliText.trim().toLowerCase()
+                                                );
+                                                if (cliText.trim() && !exact) {
+                                                    prefillFromFreeText(cliText);
+                                                } else {
+                                                    setSelCliente(null);
+                                                }
+                                            }}
+                                            onKeyDown={(e) => {
+                                                if (e.key === "Enter") {
+                                                    const exactMatch = clienteMatches.some(
+                                                        (c) =>
+                                                            `${(c.nombre ?? "").trim()} ${(c.apellido ?? "").trim()}`
+                                                                .trim()
+                                                                .toLowerCase() === cliText.trim().toLowerCase()
+                                                    );
+                                                    if (cliText.trim() && !exactMatch) {
+                                                        e.preventDefault();
+                                                        prefillFromFreeText(cliText);
+                                                    }
+                                                }
+                                            }}
+                                            allowsCustomValue
+                                            defaultItems={clienteMatches}
                                             isLoading={!clientes.length && loading}
-                                            renderValue={(items) => items.map((i) => i.data?.nombre).join(", ")}
+                                            startContent={<Icon icon="solar:user-bold-duotone" />}
+                                            items={clienteMatches}
                                         >
-                                            {(item) => <SelectItem key={item.id}>{item.nombre}</SelectItem>}
-                                        </Select>
+                                            {(c: ApiCliente) => (
+                                                <AutocompleteItem key={String(c.id_cliente)} textValue={`${c.nombre} ${c.apellido}`}>
+                                                    <div className="flex flex-col">
+                                                        <span className="font-medium">
+                                                            {c.nombre} {c.apellido}
+                                                        </span>
+                                                        <span className="text-xs opacity-70">
+                                                            {c.cedula ? `CI: ${c.cedula} · ` : ""}
+                                                            {c.telefono || ""}{c.telefono && c.correo ? " · " : ""}{c.correo || ""}
+                                                        </span>
+                                                    </div>
+                                                </AutocompleteItem>
+                                            )}
+                                        </Autocomplete>
                                     </div>
 
+                                    {/* Crear desde texto si no existe -> abre modal */}
+                                    {cliText.trim() &&
+                                        !clienteMatches.some(
+                                            (c) =>
+                                                `${(c.nombre ?? "").trim()} ${(c.apellido ?? "").trim()}`
+                                                    .trim()
+                                                    .toLowerCase() === cliText.trim().toLowerCase()
+                                        ) && (
+                                            <Button
+                                                size="sm"
+                                                variant="flat"
+                                                onPress={createFromFreeText}
+                                                startContent={<Icon icon="solar:user-plus-bold-duotone" />}
+                                            >
+                                                Crear “{cliText.trim()}”
+                                            </Button>
+                                        )}
+
+                                    {/* Crear con formulario completo */}
                                     <Button
                                         size="sm"
                                         variant="flat"
-                                        onPress={() => setMClienteOpen(true)}
+                                        onPress={() => {
+                                            setDraftCliente({ contrasena: "12345678" });
+                                            setMClienteOpen(true);
+                                        }}
                                         startContent={<Icon icon="solar:user-plus-bold-duotone" />}
                                     >
                                         Nuevo
@@ -337,17 +471,10 @@ export default function NuevaMembresiaCard({
                             {/* Paso 3: Resumen / acciones rápidas */}
                             <section className="space-y-3">
                                 <div className="flex flex-wrap gap-2">
-       
                                     <Chip variant="flat">Cantidad: {cant}</Chip>
                                     <Chip variant="flat">Expira: {expLocalDate}</Chip>
-                                    <Chip color="success" variant="flat">
-                                        Total: {money(total)}
-                                    </Chip>
-                                    {pct > 0 && (
-                                        <Chip color="primary" variant="flat">
-                                            Descuento: {pct}%
-                                        </Chip>
-                                    )}
+                                    <Chip color="success" variant="flat">Total: {money(total)}</Chip>
+                                    {pct > 0 && <Chip color="primary" variant="flat">Descuento: {pct}%</Chip>}
                                 </div>
 
                                 <div className="flex flex-wrap items-center gap-2">
@@ -361,29 +488,27 @@ export default function NuevaMembresiaCard({
                                     </Button>
 
                                     {showDesc && (
-                                        <>
-                                            <Select
-                                                aria-label="Atajos de descuento"
-                                                className="w-[160px]"
-                                                selectedKeys={new Set([String(pct)])}
-                                                onSelectionChange={(k) => {
-                                                    const v = Number(Array.from(k)[0] || 0);
-                                                    setDescuentoPct(v);
-                                                }}
-                                                items={[
-                                                    { id: "0", label: "0%" },
-                                                    { id: "10", label: "10%" },
-                                                    { id: "15", label: "15%" },
-                                                    { id: "20", label: "20%" },
-                                                    { id: "25", label: "25%" },
-                                                    { id: "50", label: "50%" },
-                                                    { id: "100", label: "100%" },
-                                                ]}
-                                                renderValue={(items) => items.map((i) => i.data?.label).join(", ")}
-                                            >
-                                                {(it: any) => <SelectItem key={it.id}>{it.label}</SelectItem>}
-                                            </Select>
-                                        </>
+                                        <Select
+                                            aria-label="Atajos de descuento"
+                                            className="w-[160px]"
+                                            selectedKeys={new Set([String(pct)])}
+                                            onSelectionChange={(k) => {
+                                                const v = Number(Array.from(k)[0] || 0);
+                                                setDescuentoPct(v);
+                                            }}
+                                            items={[
+                                                { id: "0", label: "0%" },
+                                                { id: "10", label: "10%" },
+                                                { id: "15", label: "15%" },
+                                                { id: "20", label: "20%" },
+                                                { id: "25", label: "25%" },
+                                                { id: "50", label: "50%" },
+                                                { id: "100", label: "100%" },
+                                            ]}
+                                            renderValue={(items) => items.map((i) => (i as any).data?.label).join(", ")}
+                                        >
+                                            {(it: any) => <SelectItem key={it.id}>{it.label}</SelectItem>}
+                                        </Select>
                                     )}
                                 </div>
                             </section>
@@ -407,7 +532,7 @@ export default function NuevaMembresiaCard({
                                             onSelectionChange={(k) => setSelMetodo(Number(Array.from(k)[0]))}
                                             isLoading={!metodos.length && loading}
                                             isDisabled={!metodos.length}
-                                            renderValue={(items) => items.map((i) => i.data?.nombre).join(", ")}
+                                            renderValue={(items) => items.map((i) => (i as any).data?.nombre).join(", ")}
                                             className="w-full"
                                         >
                                             {(item) => <SelectItem key={item.id}>{item.nombre}</SelectItem>}
@@ -420,7 +545,7 @@ export default function NuevaMembresiaCard({
                                             onSelectionChange={(k) => setSelEstado(Number(Array.from(k)[0]))}
                                             isLoading={!estados.length && loading}
                                             isDisabled={!estados.length}
-                                            renderValue={(items) => items.map((i) => i.data?.nombre).join(", ")}
+                                            renderValue={(items) => items.map((i) => (i as any).data?.nombre).join(", ")}
                                             className="w-full"
                                         >
                                             {(item) => <SelectItem key={item.id}>{item.nombre}</SelectItem>}
@@ -450,7 +575,7 @@ export default function NuevaMembresiaCard({
                 )}
             </CardBody>
 
-            {/* ===== Modal: nuevo cliente ===== */}
+            {/* ===== Modal: nuevo cliente (form) ===== */}
             <Modal
                 isOpen={mClienteOpen}
                 onOpenChange={setMClienteOpen}
@@ -468,14 +593,21 @@ export default function NuevaMembresiaCard({
                                 Nuevo cliente
                             </ModalHeader>
                             <ModalBody className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                                <Input id="ncli-nombre" label="Nombre" autoFocus />
-                                <Input id="ncli-apellido" label="Apellido" />
-                                <Input id="ncli-cedula" label="Cédula" />
-                                <Input id="ncli-correo" label="Correo" type="email" />
-                                <Input id="ncli-telefono" label="Teléfono" />
+                                <Input id="ncli-nombre" label="Nombre" autoFocus defaultValue={draftCliente.nombre ?? ""} />
+                                <Input id="ncli-apellido" label="Apellido" defaultValue={draftCliente.apellido ?? ""} />
+                                <Input id="ncli-cedula" label="Cédula" defaultValue={draftCliente.cedula ?? ""} />
+                                <Input id="ncli-correo" label="Correo" type="email" defaultValue={draftCliente.correo ?? ""} />
+                                <Input id="ncli-telefono" label="Teléfono" defaultValue={draftCliente.telefono ?? ""} />
+                                <Input
+                                    id="ncli-contrasena"
+                                    label="Contraseña (por defecto: cédula)"
+                                    type="password"
+                                    defaultValue={draftCliente.contrasena ?? ""}
+                                />
+
                             </ModalBody>
                             <ModalFooter className="justify-between">
-                                <Button variant="flat" onPress={() => setMClienteOpen(false)}>
+                                <Button variant="flat" onPress={() => { setMClienteOpen(false); setDraftCliente({}); }}>
                                     Cerrar
                                 </Button>
                                 <div className="flex gap-2">
