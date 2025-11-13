@@ -483,7 +483,7 @@ export default function GimnasiosPage() {
     }
 
     return (
-        
+
         <div className="relative z-10 space-y-6">
             {/* Aviso de sesión expirada (401) */}
             {authExpired && (
@@ -510,62 +510,80 @@ export default function GimnasiosPage() {
                 </Card>
             )}
 
-            {/* Header empresa */}
-            <div className="flex items-center justify-between gap-3">
-                <div className="flex items-center gap-3 min-w-0">
-                    <div className="h-12 w-12 rounded-xl bg-default-100 flex items-center justify-center overflow-hidden">
-                        {logo ? (
-                            <Image
-                                src={logo}
-                                alt={empresa?.nombre || "Logo empresa"}
-                                className="h-12 w-12 object-contain"
-                                removeWrapper
-                            />
-                        ) : (
-                            <span className="text-2xl font-bold text-foreground-500">
-                                {empresaIniciales}
-                            </span>
-                        )}
-                    </div>
-                    <div className="min-w-0">
-                        <h1 className="text-2xl font-bold truncate">
-                            {empresa?.nombre || "Empresa"}
-                        </h1>
-                        {empresa?.correo && empresa?.telefono && (
-                            <p className="text-sm text-foreground-500 truncate">
-                                {empresa?.correo && <span className="mr-3">{empresa.correo}</span>}
-                            </p>
-                        )}
-                    </div>
-                </div>
-                <div className="flex items-center gap-5">
-                    <GuayaquilClock />
-                    <Button
-                        color="primary"
-                        startContent={<Icon icon="solar:add-circle-bold-duotone" />}
-                        onClick={() => setIsNewOpen(true)}
-                    >
-                        Nuevo Gimnasio
-                    </Button>
-                </div>
-            </div>
+            {/* HEADER — Hero con fondo y overlay */}
+            <header className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8">
+                <div className="relative overflow-hidden border-b">
+                    <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                        <div className="mt-3 mb-3 rounded-2xl border bg-background/60 backdrop-blur supports-[backdrop-filter]:backdrop-blur shadow-sm">
+                            <div className="px-4 md:px-6 py-3">
+                                <div className="flex items-center justify-between gap-4">
+                                    {/* Identidad */}
+                                    <div className="flex items-center gap-4 min-w-0">
+                                        <div className="h-14 w-14 md:h-16 md:w-16 rounded-2xl bg-default-100 ring-1 ring-default-200 overflow-hidden flex items-center justify-center shrink-0">
+                                            {logo ? (
+                                                <img src={logo} alt="Logo" className="h-full w-full object-contain" />
+                                            ) : (
+                                                <span className="text-2xl md:text-3xl font-bold text-foreground-500">
+                                                    {empresaIniciales}
+                                                </span>
+                                            )}
+                                        </div>
 
-            {/* Filtro */}
-            <div className="flex items-center gap-3">
-                <Input
-                    className="max-w-md"
-                    startContent={<Icon icon="solar:magnifier-linear" />}
-                    placeholder="Buscar por gym/sucursal/ciudad/teléfono/correo…"
-                    value={q}
-                    onValueChange={setQ}
-                    isDisabled={!rows && !error}
-                />
-                <div className="ml-auto text-sm text-foreground-500">
-                    {rows
-                        ? `${filtered?.length ?? 0} resultado${(filtered?.length ?? 0) === 1 ? "" : "s"}`
-                        : ""}
+                                        <div className="min-w-0">
+                                            <h1 className="text-2xl md:text-3xl font-bold tracking-tight truncate">
+                                                {empresa?.nombre || "Empresa"}
+                                            </h1>
+                                            {(empresa?.correo || empresa?.telefono) && (
+                                                <p className="text-sm text-foreground-500 truncate flex items-center gap-3">
+                                                    {empresa?.correo && <span>{empresa.correo}</span>}
+                                                    {empresa?.telefono && <span>{empresa.telefono}</span>}
+                                                </p>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Reloj + CTA */}
+                                    <div className="flex items-center gap-4">
+                                        <GuayaquilClock />
+                                        <Button
+                                            color="primary"
+                                            startContent={<Icon icon="solar:add-circle-bold-duotone" />}
+                                            onClick={() => setIsNewOpen(true)}
+                                        >
+                                            Nuevo Gimnasio
+                                        </Button>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
-            </div>
+            </header>
+
+
+            {/* TOOLBAR — búsqueda y contador */}
+            <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+                <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+                    <Input
+                        className="md:flex-1"
+                        size="lg"
+                        startContent={<Icon icon="solar:magnifier-linear" />}
+                        placeholder="Buscar por gym, sucursal, ciudad, teléfono o correo…"
+                        value={q}
+                        onValueChange={setQ}
+                        isDisabled={!rows && !error}
+                    />
+
+                    <div className="ml-0 md:ml-auto text-sm text-foreground-500 text-right">
+                        {rows ? (
+                            <span>
+                                {filtered?.length ?? 0} resultado{(filtered?.length ?? 0) === 1 ? "" : "s"}
+                            </span>
+                        ) : null}
+                    </div>
+                </div>
+            </section>
+
 
             {/* Loading / Error / Listado */}
             {!rows && !error && (
@@ -601,7 +619,7 @@ export default function GimnasiosPage() {
                         return (
                             <Card
                                 key={r.sucursalId}
-                                className="border hover:shadow-md transition cursor-pointer"
+                                className="border hover:shadow-md hover:-translate-y-0.5 transition ease-out cursor-pointer rounded-2xl"
                                 onClick={() => router.push(href)}
                                 role="button"
                                 tabIndex={0}
@@ -613,30 +631,28 @@ export default function GimnasiosPage() {
                                 }}
                             >
                                 <CardHeader className="justify-between">
-                                    <div className="min-w-0">
-                                        <div className="flex items-center gap-2">
-                                            <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-default-100">
-                                                <Icon icon="solar:buildings-2-bold-duotone" className="text-xl" />
-                                            </span>
-                                            <div className="min-w-0">
-                                                <h3 className="truncate font-semibold">{r.gymNombre}</h3>
-                                                <p className="truncate text-xs text-foreground-500">
-                                                    {r.gymId} • {r.ciudad}
-                                                </p>
-                                                <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-foreground-500">
-                                                    {r.telefono && (
-                                                        <span className="inline-flex items-center gap-1">
-                                                            <Icon icon="solar:phone-bold" />
-                                                            {r.telefono}
-                                                        </span>
-                                                    )}
-                                                    {r.correo && (
-                                                        <span className="inline-flex items-center gap-1">
-                                                            <Icon icon="solar:letter-bold" />
-                                                            {r.correo}
-                                                        </span>
-                                                    )}
-                                                </div>
+                                    <div className="min-w-0 flex items-start gap-3">
+                                        <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-default-100 ring-1 ring-default-200 shrink-0">
+                                            <Icon icon="solar:buildings-2-bold-duotone" className="text-lg" />
+                                        </span>
+                                        <div className="min-w-0">
+                                            <h3 className="truncate font-semibold">{r.gymNombre}</h3>
+                                            <p className="truncate text-xs text-foreground-500">
+                                                {r.gymId} • {r.ciudad}
+                                            </p>
+                                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground-500">
+                                                {r.telefono && (
+                                                    <span className="inline-flex items-center gap-1">
+                                                        <Icon icon="solar:phone-bold" />
+                                                        {r.telefono}
+                                                    </span>
+                                                )}
+                                                {r.correo && (
+                                                    <span className="inline-flex items-center gap-1">
+                                                        <Icon icon="solar:letter-bold" />
+                                                        {r.correo}
+                                                    </span>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -649,16 +665,16 @@ export default function GimnasiosPage() {
                                     <div className="grid grid-cols-2 gap-2 text-center text-sm">
                                         <div className="rounded-lg bg-default-100 p-2">
                                             <div className="text-xs text-foreground-500">Miembros</div>
-                                            <div className="font-semibold">{r.miembros}</div>
+                                            <div className="font-semibold tabular-nums">{r.miembros}</div>
                                         </div>
                                         <div className="rounded-lg bg-default-100 p-2">
                                             <div className="text-xs text-foreground-500">Membresías</div>
-                                            <div className="font-semibold">{r.membresias}</div>
+                                            <div className="font-semibold tabular-nums">{r.membresias}</div>
                                         </div>
                                     </div>
                                 </CardBody>
 
-                                <CardFooter className="justify-end">
+                                <CardFooter className="justify-between">
                                     <Button
                                         size="sm"
                                         variant="flat"
@@ -672,6 +688,7 @@ export default function GimnasiosPage() {
                                     </Button>
                                 </CardFooter>
                             </Card>
+
                         );
                     })}
                 </div>

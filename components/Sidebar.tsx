@@ -16,11 +16,9 @@ function useEmpresaId() {
     React.useEffect(() => {
         if (typeof window === "undefined") return;
         const ls = localStorage.getItem("auth:empresaId");
-        let value = empresaFromQuery || ls || null;
+        const value = empresaFromQuery || ls || null;
         if (empresaFromQuery) {
-            try {
-                localStorage.setItem("auth:empresaId", empresaFromQuery);
-            } catch { }
+            try { localStorage.setItem("auth:empresaId", empresaFromQuery); } catch { }
         }
         setEmpresaId(value);
     }, [empresaFromQuery]);
@@ -86,6 +84,31 @@ const I = {
             <path fill="currentColor" d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z" />
         </svg>
     ),
+    Dashboard: (p: React.SVGProps<SVGSVGElement>) => (
+        <svg viewBox="0 0 24 24" {...p}>
+            <path fill="currentColor" d="M3 13h8V3H3v10Zm0 8h8v-6H3v6Zm10 0h8v-10h-8v10Zm0-18v6h8V3h-8Z" />
+        </svg>
+    ),
+    Apps: (p: React.SVGProps<SVGSVGElement>) => (
+        <svg viewBox="0 0 24 24" {...p}>
+            <path fill="currentColor" d="M4 4h6v6H4zm0 10h6v6H4zm10-10h6v6h-6zm0 10h6v6h-6z" />
+        </svg>
+    ),
+    Settings: (p: React.SVGProps<SVGSVGElement>) => (
+        <svg viewBox="0 0 24 24" {...p}>
+            <path fill="currentColor" d="M12 8a4 4 0 1 0 4 4a4 4 0 0 0-4-4Zm8.94 2.06l1.42-1.42l-2.12-2.12l-1.42 1.42a7.963 7.963 0 0 0-1.77-.98L16 5h-2l-.05 2.96c-.63.22-1.21.56-1.77.98L11.76 7.5L9.64 9.62l1.42 1.42c-.42.56-.76 1.14-.98 1.77L7 13v2l2.96.05c.22.63.56 1.21.98 1.77l-1.42 1.42l2.12 2.12l1.42-1.42c.56.42 1.14.76 1.77.98L14 19h2l.05-2.96c.63-.22 1.21-.56 1.77-.98l1.42 1.42l2.12-2.12l-1.42-1.42c.42-.56.76-1.14.98-1.77L19 11v-2l-2.96-.05c-.22-.63-.56-1.21-.98-1.77Z" />
+        </svg>
+    ),
+    Marketing: (p: React.SVGProps<SVGSVGElement>) => (
+        <svg viewBox="0 0 24 24" {...p}>
+            <path fill="currentColor" d="M4 4h16v2H4zm0 6h10v2H4zm0 6h16v2H4z" />
+        </svg>
+    ),
+    Mediciones: (p: React.SVGProps<SVGSVGElement>) => (
+        <svg viewBox="0 0 24 24" {...p}>
+            <path fill="currentColor" d="M12 3L2 9l10 6l10-6l-10-6zm0 8.25L5.14 9L12 5.75L18.86 9L12 11.25zM2 13v8l10 6l10-6v-8l-2 1.2v6.8l-8 4.8l-8-4.8v-6.8L2 13z" />
+        </svg>
+    ),
 };
 
 /* =========================
@@ -93,17 +116,9 @@ const I = {
 ========================= */
 
 function NavItem({
-    href,
-    label,
-    icon,
-    collapsed,
-    onNavigate,
+    href, label, icon, collapsed, onNavigate,
 }: {
-    href: string;
-    label: string;
-    icon: React.ReactNode;
-    collapsed: boolean;
-    onNavigate?: () => void;
+    href: string; label: string; icon: React.ReactNode; collapsed: boolean; onNavigate?: () => void;
 }) {
     const active = useIsActive(href);
     return (
@@ -134,7 +149,7 @@ function NavItem({
 
 export default function AdminSidebar() {
     const empresaId = useEmpresaId();
-    const [open, setOpen] = React.useState(false);          // drawer móvil
+    const [open, setOpen] = React.useState(false);           // drawer móvil
     const [collapsed, setCollapsed] = React.useState(false); // colapso md+
     const [mounted, setMounted] = React.useState(false);
 
@@ -161,15 +176,11 @@ export default function AdminSidebar() {
         return s ? `?${s}` : "";
     }, [empresaId]);
 
-    const historialHref = "/admin/historial";
-
     const handleNavigate = React.useCallback(() => setOpen(false), []);
     const toggleCollapsed = React.useCallback(() => {
         setCollapsed((v) => {
             const nv = !v;
-            try {
-                localStorage.setItem("ui:sidebarCollapsed", nv ? "1" : "0");
-            } catch { }
+            try { localStorage.setItem("ui:sidebarCollapsed", nv ? "1" : "0"); } catch { }
             return nv;
         });
     }, []);
@@ -186,16 +197,21 @@ export default function AdminSidebar() {
     if (!mounted) return null;
 
     const LINKS = [
+        { href: `/admin/dashboard${baseQueryStr}`, label: "Dashboard", icon: <I.Dashboard className="h-4 w-4" /> },
         { href: `/admin/gimnasios${baseQueryStr}`, label: "Gimnasios", icon: <I.Gym className="h-4 w-4" /> },
-        { href: historialHref, label: "Historial", icon: <I.History className="h-4 w-4" /> },
+        { href: `/admin/historial`, label: "Historial", icon: <I.History className="h-4 w-4" /> },
         { href: `/admin/empleados${baseQueryStr}`, label: "Empleados", icon: <I.Users className="h-4 w-4" /> },
         { href: `/admin/clientes${baseQueryStr}`, label: "Clientes", icon: <I.Client className="h-4 w-4" /> },
+        { href: `/admin/mediciones${baseQueryStr}`, label: "Mediciones", icon: <I.Mediciones className="h-4 w-4" /> },
+        { href: `/admin/movil${baseQueryStr}`, label: "Aplicación Móvil", icon: <I.Apps className="h-4 w-4" /> },
+        { href: `/admin/marketing${baseQueryStr}`, label: "Marketing", icon: <I.Marketing className="h-4 w-4" /> },
+        { href: `/admin/configuracion${baseQueryStr}`, label: "Configuración", icon: <I.Settings className="h-4 w-4" /> },
         { href: `/admin/perfil${baseQueryStr}`, label: "Perfil", icon: <I.Profile className="h-4 w-4" /> },
     ];
 
     return (
         <>
-            {/* FAB móvil para abrir el menú (esquina inferior izquierda) */}
+            {/* FAB móvil */}
             <button
                 type="button"
                 onClick={() => setOpen(true)}
@@ -205,20 +221,28 @@ export default function AdminSidebar() {
                 <I.Menu className="h-5 w-5" />
             </button>
 
-            {/* Drawer móvil - ocupa full screen */}
+            {/* Drawer móvil – FULL SCREEN */}
             <div
                 id="mobile-sidebar"
                 role="dialog"
                 aria-modal="true"
-                className={`md:hidden fixed inset-0 z-50 ${open ? "" : "pointer-events-none"}`}
+                className={`md:hidden fixed inset-0 z-50 ${open ? "pointer-events-auto" : "pointer-events-none"}`}
             >
+                {/* overlay */}
                 <div
                     className={`absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity ${open ? "opacity-100" : "opacity-0"}`}
                     onClick={() => setOpen(false)}
                 />
+                {/* panel */}
                 <aside
-                    className={`absolute left-0 top-0 h-full w-80 max-w-[90%] transform border-r bg-background shadow-xl transition-transform ${open ? "translate-x-0" : "-translate-x-full"}`}
+                    className={[
+                        "absolute left-0 inset-y-0 h-dvh w-full sm:w-[420px]", // ← ocupa toda la pantalla (en sm limita el ancho)
+                        "transform border-r bg-background shadow-xl transition-transform",
+                        open ? "translate-x-0" : "-translate-x-full",
+                        "flex flex-col", // para header / scroll / footer
+                    ].join(" ")}
                 >
+                    {/* header */}
                     <div className="flex items-center gap-3 border-b px-4 py-3">
                         <div className="h-8 w-8 rounded-lg bg-gradient-to-br from-primary to-primary/60 shadow-sm" />
                         <div className="min-w-0">
@@ -234,7 +258,8 @@ export default function AdminSidebar() {
                         </button>
                     </div>
 
-                    <nav className="flex flex-col gap-1 p-3">
+                    {/* contenido scrollable */}
+                    <nav className="flex-1 overflow-y-auto p-3 flex flex-col gap-1">
                         {LINKS.map((l) => (
                             <NavItem
                                 key={l.href}
@@ -247,7 +272,8 @@ export default function AdminSidebar() {
                         ))}
                     </nav>
 
-                    <div className="mt-auto border-t p-3">
+                    {/* footer */}
+                    <div className="border-t p-3">
                         <button
                             onClick={onLogout}
                             className="w-full inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-default-100"
@@ -259,13 +285,13 @@ export default function AdminSidebar() {
                 </aside>
             </div>
 
-            {/* Sidebar de escritorio: altura completa, sticky, con scroll interno */}
+            {/* Sidebar escritorio */}
             <aside
                 className={[
                     "hidden md:sticky md:top-0 md:flex md:h-dvh md:shrink-0 md:flex-col",
                     "border-r bg-background/70 backdrop-blur",
                     "transition-[width] duration-200",
-                    collapsed ? "md:w-20" : "md:w-72", // colapsado vs expandido
+                    collapsed ? "md:w-20" : "md:w-72",
                 ].join(" ")}
             >
                 {/* Header */}
@@ -283,7 +309,7 @@ export default function AdminSidebar() {
                     <div className="h-px w-full bg-gradient-to-r from-transparent via-default-200 to-transparent dark:via-default-100" />
                 </div>
 
-                {/* Área scrollable (ocupa el espacio entre header y footer) */}
+                {/* Scroll interno */}
                 <div className="flex-1 overflow-y-auto px-3">
                     <nav className="flex flex-col gap-1 pb-4">
                         {LINKS.map((l) => (
@@ -292,7 +318,7 @@ export default function AdminSidebar() {
                     </nav>
                 </div>
 
-                {/* Footer fijo (toggle + salir) */}
+                {/* Footer */}
                 <div className="mt-auto sticky bottom-0 bg-background/80 backdrop-blur border-t px-3 py-3">
                     <div className="flex items-center gap-2">
                         <button
