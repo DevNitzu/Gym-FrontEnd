@@ -24,7 +24,7 @@ function isEmail(v: string) {
 export default function LoginPage() {
   const router = useRouter();
   const sp = useSearchParams();
-  const redirectTo = sp.get("redirect") || "/admin/gimnasios"; // lo ajustamos abajo con ?empresa
+  const redirectTo = sp.get("redirect") || "/admin/dashboard"; // lo ajustamos abajo con ?empresa
 
   const [email, setEmail] = React.useState("");
   const [pass, setPass] = React.useState("");
@@ -201,7 +201,7 @@ export default function LoginPage() {
       localStorage.setItem("auth:empresa", String(idEmpresa));
 
       // 6) Redirección: respeta ?redirect y agrega empresa=ID sin duplicar
-      const base = redirectTo || "/admin/gimnasios";
+      const base = redirectTo || "/admin/dashboard";
       const hasQuery = base.includes("?");
       const hasEmpresaInRedirect = /(^|[?&])empresa=/.test(base);
       const next = hasEmpresaInRedirect

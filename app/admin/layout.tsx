@@ -1,25 +1,31 @@
+// app/admin/layout.tsx
 "use client";
 
 import React from "react";
 import AdminSidebar from "@/components/Sidebar";
 
-export default function AdminLayout({ children }: { children: React.ReactNode }) {
+export default function AdminLayout({
+    children,
+}: {
+    children: React.ReactNode;
+}) {
     return (
         <div
-            className="min-h-dvh"
-            style={{
+            className="min-h-dvh w-full"
+           /*  style={{
                 backgroundImage: `url("/fondo.png")`,
-                backgroundSize: "250px",     // cambia el tamaño del patrón
-                backgroundRepeat: "repeat",   // para que se repita
+                backgroundSize: "250px",
+                backgroundRepeat: "repeat",
                 backgroundPosition: "center",
-                backgroundColor: "#ffffff",   // color base
-            }}
+                backgroundColor: "#ffffff",
+            }} */
         >
-            <div className="grid grid-cols-1 md:grid-cols-[16rem_1fr]">
+            <div className="flex min-h-dvh w-full">
                 <AdminSidebar />
 
-                <main className="min-w-0">
-                    <div className="max-w-6xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6">
+                {/* CONTENIDO */}
+                <main className="flex-1 min-w-0">
+                    <div className="w-full h-full px-3 sm:px-4 lg:px-6 py-4 sm:py-6">
                         {children}
                     </div>
                 </main>

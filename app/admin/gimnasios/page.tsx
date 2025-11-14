@@ -10,7 +10,6 @@ import {
     Chip,
     Input,
     Spinner,
-    Image,
     Modal,
     ModalContent,
     ModalHeader,
@@ -50,13 +49,13 @@ type ApiEmpresa = {
 };
 
 type Row = {
-    gymId: string;      // "G-010"
-    gymIdNum: number;   // 10
+    gymId: string; // "G-010"
+    gymIdNum: number; // 10
     gymNombre: string;
     ciudad: string;
     sucursalId: string;
-    miembros: number;    // ← clientes_count (n° de clientes)
-    membresias: number;  // ← active_count (membresías activas)
+    miembros: number; // ← clientes_count (n° de clientes)
+    membresias: number; // ← active_count (membresías activas)
     estado: EstadoSucursal;
     telefono: string;
     correo: string;
@@ -93,8 +92,8 @@ function mapApiToRow(item: ApiGimnasio): Row {
         gymNombre: item.nombre ?? "Gimnasio",
         ciudad: item.direccion ?? "—",
         sucursalId,
-        miembros: 0,      // se llenará con clientes_count
-        membresias: 0,    // se llenará con active_count
+        miembros: 0, // se llenará con clientes_count
+        membresias: 0, // se llenará con active_count
         estado,
         telefono: item.telefono ?? "",
         correo: item.correo ?? "",
@@ -112,10 +111,10 @@ function coerceCount(data: any): number {
     }
     if (data && typeof data === "object") {
         const maybe =
-            data.active_membresias_count ??
-            data.clientes_membresia_count ??
-            data.count ??
-            data.value ??
+            (data as any).active_membresias_count ??
+            (data as any).clientes_membresia_count ??
+            (data as any).count ??
+            (data as any).value ??
             null;
         const n = Number(maybe);
         return Number.isFinite(n) ? n : 0;
@@ -146,7 +145,7 @@ async function fetchActiveCountByGym(id_gimnasio: number): Promise<number> {
     return coerceCount(data);
 }
 
-/** Clientes (miembros) por gimnasio - OJO: ruta con prefijo /membresias/ */
+/** Clientes (miembros) por gimnasio */
 async function fetchClientesCountByGym(id_gimnasio: number): Promise<number> {
     const url = `${API_BASE}/api/v1/membresias/clientes_count/gimnasio/${encodeURIComponent(
         id_gimnasio
@@ -232,9 +231,7 @@ function NewGymModal({
             const creadoMapeado = mapApiToRow({
                 ...created,
                 activo:
-                    typeof created.activo === "boolean"
-                        ? created.activo
-                        : Number(created.activo),
+                    typeof created.activo === "boolean" ? created.activo : Number(created.activo),
                 fecha_creacion: created.fecha_creacion ?? new Date().toISOString(),
             });
             onCreated(creadoMapeado);
@@ -274,9 +271,7 @@ function NewGymModal({
                             placeholder="user@example.com"
                             isInvalid={!!correo && !/\S+@\S+\.\S+/.test(correo)}
                             errorMessage={
-                                !!correo && !/\S+@\S+\.\S+/.test(correo)
-                                    ? "Correo inválido"
-                                    : undefined
+                                !!correo && !/\S+@\S+\.\S+/.test(correo) ? "Correo inválido" : undefined
                             }
                             value={correo}
                             onValueChange={setCorreo}
@@ -290,8 +285,7 @@ function NewGymModal({
                     </div>
                     <div className="pt-1">
                         <Checkbox isSelected={activo} onValueChange={setActivo}>
-                            Activo (aparece como <span className="font-semibold">Abierta</span>{" "}
-                            en la lista)
+                            Activo (aparece como <span className="font-semibold">Abierta</span> en la lista)
                         </Checkbox>
                     </div>
                     {error && (
@@ -315,6 +309,47 @@ function NewGymModal({
                 </ModalFooter>
             </ModalContent>
         </Modal>
+    );
+}
+
+/* ===================== Hooks reloj ===================== */
+
+function useGuayaquilNow() {
+    const [now, setNow] = React.useState<Date | null>(null);
+    React.useEffect(() => {
+        setNow(new Date());
+        const id = setInterval(() => setNow(new Date()), 1000);
+        return () => clearInterval(id);
+    }, []);
+    if (!now) return { time: "—", date: "" };
+    const time = new Intl.DateTimeFormat("es-EC", {
+        timeZone: "America/Guayaquil",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false,
+    }).format(now);
+    const date = new Intl.DateTimeFormat("es-EC", {
+        timeZone: "America/Guayaquil",
+        weekday: "short",
+        day: "2-digit",
+        month: "short",
+        year: "numeric",
+    }).format(now);
+    return { time, date };
+}
+
+function GuayaquilClock() {
+    const { time, date } = useGuayaquilNow();
+    return (
+        <div className="text-right leading-tight">
+            <div className="text-xs text-foreground-500 flex items-center gap-1 justify-end">
+                <Icon icon="solar:clock-circle-bold-duotone" />
+                <span>Hora actual · EC</span>
+            </div>
+            <div className="font-semibold tabular-nums">{time}</div>
+            <div className="text-xs text-foreground-500">{date}</div>
+        </div>
     );
 }
 
@@ -342,12 +377,8 @@ export default function GimnasiosPage() {
                 setEmpresa(null);
                 setAuthExpired(false);
 
-                const gymsUrl = `${API_BASE}/api/v1/gimnasios/${encodeURIComponent(
-                    empresaId
-                )}`;
-                const empUrl = `${API_BASE}/api/v1/empresas/${encodeURIComponent(
-                    empresaId
-                )}`;
+                const gymsUrl = `${API_BASE}/api/v1/gimnasios/${encodeURIComponent(empresaId)}`;
+                const empUrl = `${API_BASE}/api/v1/empresas/${encodeURIComponent(empresaId)}`;
 
                 const [gymsRes, empRes] = await Promise.all([
                     authFetch(gymsUrl, {
@@ -376,14 +407,14 @@ export default function GimnasiosPage() {
 
                 const mapped = gymsList.map(mapApiToRow);
 
-                // === Rellenar conteos por gym (clientes_count = miembros, active_count = membresias)
+                // === Rellenar conteos por gym
                 try {
                     const counts = await Promise.all(
                         mapped.map(async (r) => {
                             try {
                                 const [miembros, membresias] = await Promise.all([
-                                    fetchClientesCountByGym(r.gymIdNum), // ← /api/v1/membresias/clientes_count/gimnasio/{id}
-                                    fetchActiveCountByGym(r.gymIdNum),   // ← /api/v1/membresias/active_count/gimnasio/{id}
+                                    fetchClientesCountByGym(r.gymIdNum),
+                                    fetchActiveCountByGym(r.gymIdNum),
                                 ]);
                                 return { id: r.gymIdNum, miembros, membresias };
                             } catch (err: any) {
@@ -393,8 +424,8 @@ export default function GimnasiosPage() {
                         })
                     );
 
-                    const byIdMiembros = new Map<number, number>(counts.map(c => [c.id, c.miembros]));
-                    const byIdMembresias = new Map<number, number>(counts.map(c => [c.id, c.membresias]));
+                    const byIdMiembros = new Map<number, number>(counts.map((c) => [c.id, c.miembros]));
+                    const byIdMembresias = new Map<number, number>(counts.map((c) => [c.id, c.membresias]));
 
                     for (const r of mapped) {
                         r.miembros = byIdMiembros.get(r.gymIdNum) ?? 0;
@@ -406,9 +437,8 @@ export default function GimnasiosPage() {
                     }
                 }
 
-
                 if (alive) {
-                    setRows([...mapped]); // asegura re-render
+                    setRows([...mapped]);
                     setEmpresa(empData);
                 }
             } catch (e: any) {
@@ -427,7 +457,15 @@ export default function GimnasiosPage() {
         const s = q.trim().toLowerCase();
         if (!s) return rows;
         return rows.filter((r) =>
-            [r.gymId, r.gymNombre, r.ciudad, r.sucursalId, r.telefono, r.correo, r.fechaCreacion ?? ""]
+            [
+                r.gymId,
+                r.gymNombre,
+                r.ciudad,
+                r.sucursalId,
+                r.telefono,
+                r.correo,
+                r.fechaCreacion ?? "",
+            ]
                 .join(" ")
                 .toLowerCase()
                 .includes(s)
@@ -444,255 +482,220 @@ export default function GimnasiosPage() {
             .join("")
             .toUpperCase() || "EM";
 
-    function useGuayaquilNow() {
-        const [now, setNow] = React.useState<Date | null>(null);
-        React.useEffect(() => {
-            setNow(new Date());
-            const id = setInterval(() => setNow(new Date()), 1000);
-            return () => clearInterval(id);
-        }, []);
-        if (!now) return { time: "—", date: "" };
-        const time = new Intl.DateTimeFormat("es-EC", {
-            timeZone: "America/Guayaquil",
-            hour: "2-digit",
-            minute: "2-digit",
-            second: "2-digit",
-            hour12: false,
-        }).format(now);
-        const date = new Intl.DateTimeFormat("es-EC", {
-            timeZone: "America/Guayaquil",
-            weekday: "short",
-            day: "2-digit",
-            month: "short",
-            year: "numeric",
-        }).format(now);
-        return { time, date };
-    }
-    function GuayaquilClock() {
-        const { time, date } = useGuayaquilNow();
-        return (
-            <div className="text-right leading-tight">
-                <div className="text-xs text-foreground-500 flex items-center gap-1 justify-end">
-                    <Icon icon="solar:clock-circle-bold-duotone" />
-                    <span>Hora actual · EC</span>
-                </div>
-                <div className="font-semibold tabular-nums">{time}</div>
-                <div className="text-xs text-foreground-500">{date}</div>
-            </div>
-        );
-    }
-
     return (
-
-        <div className="relative z-10 space-y-6">
-            {/* Aviso de sesión expirada (401) */}
-            {authExpired && (
-                <Card className="border">
-                    <CardBody className="text-center">
-                        <p className="font-medium">Sesión expirada (401).</p>
-                        <p className="text-sm text-foreground-500 mt-1">
-                            Vuelve a iniciar sesión para ver los conteos por gimnasio.
-                        </p>
-                        <Button
-                            className="mt-3"
-                            color="primary"
-                            startContent={<Icon icon="solar:login-2-bold-duotone" />}
-                            onClick={() => {
-                                try {
-                                    localStorage.removeItem("auth:token");
-                                } catch { }
-                                location.href = "/";
-                            }}
-                        >
-                            Iniciar sesión
-                        </Button>
-                    </CardBody>
-                </Card>
-            )}
-
-            {/* HEADER — Hero con fondo y overlay */}
-            <header className="sticky top-0 z-20 -mx-4 sm:-mx-6 lg:-mx-8">
-                <div className="relative overflow-hidden border-b">
-                    <div className="relative mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                        <div className="mt-3 mb-3 rounded-2xl border bg-background/60 backdrop-blur supports-[backdrop-filter]:backdrop-blur shadow-sm">
-                            <div className="px-4 md:px-6 py-3">
-                                <div className="flex items-center justify-between gap-4">
-                                    {/* Identidad */}
-                                    <div className="flex items-center gap-4 min-w-0">
-                                        <div className="h-14 w-14 md:h-16 md:w-16 rounded-2xl bg-default-100 ring-1 ring-default-200 overflow-hidden flex items-center justify-center shrink-0">
-                                            {logo ? (
-                                                <img src={logo} alt="Logo" className="h-full w-full object-contain" />
-                                            ) : (
-                                                <span className="text-2xl md:text-3xl font-bold text-foreground-500">
-                                                    {empresaIniciales}
-                                                </span>
-                                            )}
-                                        </div>
-
-                                        <div className="min-w-0">
-                                            <h1 className="text-2xl md:text-3xl font-bold tracking-tight truncate">
-                                                {empresa?.nombre || "Empresa"}
-                                            </h1>
-                                            {(empresa?.correo || empresa?.telefono) && (
-                                                <p className="text-sm text-foreground-500 truncate flex items-center gap-3">
-                                                    {empresa?.correo && <span>{empresa.correo}</span>}
-                                                    {empresa?.telefono && <span>{empresa.telefono}</span>}
-                                                </p>
-                                            )}
-                                        </div>
-                                    </div>
-
-                                    {/* Reloj + CTA */}
-                                    <div className="flex items-center gap-4">
-                                        <GuayaquilClock />
-                                        <Button
-                                            color="primary"
-                                            startContent={<Icon icon="solar:add-circle-bold-duotone" />}
-                                            onClick={() => setIsNewOpen(true)}
-                                        >
-                                            Nuevo Gimnasio
-                                        </Button>
-                                    </div>
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                </div>
-            </header>
-
-
-            {/* TOOLBAR — búsqueda y contador */}
-            <section className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-                <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
-                    <Input
-                        className="md:flex-1"
-                        size="lg"
-                        startContent={<Icon icon="solar:magnifier-linear" />}
-                        placeholder="Buscar por gym, sucursal, ciudad, teléfono o correo…"
-                        value={q}
-                        onValueChange={setQ}
-                        isDisabled={!rows && !error}
-                    />
-
-                    <div className="ml-0 md:ml-auto text-sm text-foreground-500 text-right">
-                        {rows ? (
-                            <span>
-                                {filtered?.length ?? 0} resultado{(filtered?.length ?? 0) === 1 ? "" : "s"}
-                            </span>
-                        ) : null}
-                    </div>
-                </div>
-            </section>
-
-
-            {/* Loading / Error / Listado */}
-            {!rows && !error && (
-                <div className="flex items-center justify-center py-16">
-                    <div className="flex items-center gap-3 text-foreground-500">
-                        <Spinner />
-                        <span>Cargando gimnasios…</span>
-                    </div>
-                </div>
-            )}
-
-            {error && (
-                <Card className="border">
-                    <CardBody className="text-center">
-                        <p className="font-medium">No se pudo cargar la lista.</p>
-                        <p className="text-sm text-foreground-500 mt-1">{error}</p>
-                        <Button
-                            className="mt-3"
-                            variant="flat"
-                            startContent={<Icon icon="solar:refresh-bold-duotone" />}
-                            onClick={() => location.reload()}
-                        >
-                            Reintentar
-                        </Button>
-                    </CardBody>
-                </Card>
-            )}
-
-            {rows && (
-                <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
-                    {(filtered ?? []).map((r) => {
-                        const href = `/admin/sucursales/${r.sucursalId}`;
-                        return (
-                            <Card
-                                key={r.sucursalId}
-                                className="border hover:shadow-md hover:-translate-y-0.5 transition ease-out cursor-pointer rounded-2xl"
-                                onClick={() => router.push(href)}
-                                role="button"
-                                tabIndex={0}
-                                onKeyDown={(e) => {
-                                    if (e.key === "Enter" || e.key === " ") {
-                                        e.preventDefault();
-                                        router.push(href);
-                                    }
+        <div className="w-full h-full">
+            {/* Contenedor principal centrado */}
+            <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-6">
+                {/* Aviso de sesión expirada (401) */}
+                {authExpired && (
+                    <Card className="border bg-warning-50">
+                        <CardBody className="text-center space-y-2">
+                            <p className="font-medium">Sesión expirada (401).</p>
+                            <p className="text-sm text-foreground-500">
+                                Vuelve a iniciar sesión para ver los conteos por gimnasio.
+                            </p>
+                            <Button
+                                className="mt-1"
+                                color="primary"
+                                startContent={<Icon icon="solar:login-2-bold-duotone" />}
+                                onClick={() => {
+                                    try {
+                                        localStorage.removeItem("auth:token");
+                                    } catch { }
+                                    location.href = "/";
                                 }}
                             >
-                                <CardHeader className="justify-between">
-                                    <div className="min-w-0 flex items-start gap-3">
-                                        <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-default-100 ring-1 ring-default-200 shrink-0">
-                                            <Icon icon="solar:buildings-2-bold-duotone" className="text-lg" />
-                                        </span>
-                                        <div className="min-w-0">
-                                            <h3 className="truncate font-semibold">{r.gymNombre}</h3>
-                                            <p className="truncate text-xs text-foreground-500">
-                                                {r.gymId} • {r.ciudad}
+                                Iniciar sesión
+                            </Button>
+                        </CardBody>
+                    </Card>
+                )}
+
+                {/* HEADER — Hero */}
+                <header>
+                    <Card className="border bg-background/80 backdrop-blur supports-[backdrop-filter]:backdrop-blur rounded-2xl shadow-sm">
+                        <CardBody className="px-4 md:px-6 py-4">
+                            <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+                                {/* Identidad */}
+                                <div className="flex items-center gap-4 min-w-0">
+                                    <div className="h-14 w-14 md:h-16 md:w-16 rounded-2xl bg-default-100 ring-1 ring-default-200 overflow-hidden flex items-center justify-center shrink-0">
+                                        {logo ? (
+                                            <img src={logo} alt="Logo" className="h-full w-full object-contain" />
+                                        ) : (
+                                            <span className="text-2xl md:text-3xl font-bold text-foreground-500">
+                                                {empresaIniciales}
+                                            </span>
+                                        )}
+                                    </div>
+
+                                    <div className="min-w-0">
+                                        <h1 className="text-2xl md:text-3xl font-bold tracking-tight truncate">
+                                            {empresa?.nombre || "Empresa"}
+                                        </h1>
+                                        {(empresa?.correo || empresa?.telefono) && (
+                                            <p className="mt-1 text-sm text-foreground-500 truncate flex flex-wrap items-center gap-3">
+                                                {empresa?.correo && <span>{empresa.correo}</span>}
+                                                {empresa?.telefono && <span>{empresa.telefono}</span>}
                                             </p>
-                                            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground-500">
-                                                {r.telefono && (
-                                                    <span className="inline-flex items-center gap-1">
-                                                        <Icon icon="solar:phone-bold" />
-                                                        {r.telefono}
-                                                    </span>
-                                                )}
-                                                {r.correo && (
-                                                    <span className="inline-flex items-center gap-1">
-                                                        <Icon icon="solar:letter-bold" />
-                                                        {r.correo}
-                                                    </span>
-                                                )}
-                                            </div>
-                                        </div>
+                                        )}
                                     </div>
-                                    <Chip size="sm" color={estadoColor(r.estado)} variant="flat">
-                                        {r.estado}
-                                    </Chip>
-                                </CardHeader>
+                                </div>
 
-                                <CardBody className="pt-0">
-                                    <div className="grid grid-cols-2 gap-2 text-center text-sm">
-                                        <div className="rounded-lg bg-default-100 p-2">
-                                            <div className="text-xs text-foreground-500">Miembros</div>
-                                            <div className="font-semibold tabular-nums">{r.miembros}</div>
-                                        </div>
-                                        <div className="rounded-lg bg-default-100 p-2">
-                                            <div className="text-xs text-foreground-500">Membresías</div>
-                                            <div className="font-semibold tabular-nums">{r.membresias}</div>
-                                        </div>
-                                    </div>
-                                </CardBody>
-
-                                <CardFooter className="justify-between">
+                                {/* Reloj + CTA */}
+                                <div className="flex items-end justify-between gap-4 md:justify-end">
+                                    <GuayaquilClock />
                                     <Button
-                                        size="sm"
-                                        variant="flat"
-                                        startContent={<Icon icon="solar:eye-bold-duotone" />}
-                                        onClick={(e) => {
-                                            e.stopPropagation();
-                                            router.push(href);
+                                        color="primary"
+                                        startContent={<Icon icon="solar:add-circle-bold-duotone" />}
+                                        onClick={() => setIsNewOpen(true)}
+                                    >
+                                        Nuevo Gimnasio
+                                    </Button>
+                                </div>
+                            </div>
+                        </CardBody>
+                    </Card>
+                </header>
+
+                {/* TOOLBAR — búsqueda y contador */}
+                <section>
+                    <Card className="border bg-background/70 rounded-2xl shadow-sm">
+                        <CardBody className="py-3">
+                            <div className="flex flex-col gap-3 md:flex-row md:items-center md:gap-4">
+                                <Input
+                                    className="md:flex-1"
+                                    size="lg"
+                                    radius="lg"
+                                    startContent={<Icon icon="solar:magnifier-linear" />}
+                                    placeholder="Buscar por gym, sucursal, ciudad, teléfono o correo…"
+                                    value={q}
+                                    onValueChange={setQ}
+                                    isDisabled={!rows && !error}
+                                />
+
+                                <div className="ml-0 md:ml-auto text-sm text-foreground-500 text-right">
+                                    {rows ? (
+                                        <span>
+                                            {filtered?.length ?? 0} resultado
+                                            {(filtered?.length ?? 0) === 1 ? "" : "s"}
+                                        </span>
+                                    ) : null}
+                                </div>
+                            </div>
+                        </CardBody>
+                    </Card>
+                </section>
+
+                {/* Loading / Error / Listado */}
+                {!rows && !error && (
+                    <div className="flex items-center justify-center py-16">
+                        <div className="flex items-center gap-3 text-foreground-500">
+                            <Spinner />
+                            <span>Cargando gimnasios…</span>
+                        </div>
+                    </div>
+                )}
+
+                {error && (
+                    <Card className="border bg-danger-50">
+                        <CardBody className="text-center space-y-2">
+                            <p className="font-medium">No se pudo cargar la lista.</p>
+                            <p className="text-sm text-foreground-500">{error}</p>
+                            <Button
+                                className="mt-1"
+                                variant="flat"
+                                startContent={<Icon icon="solar:refresh-bold-duotone" />}
+                                onClick={() => location.reload()}
+                            >
+                                Reintentar
+                            </Button>
+                        </CardBody>
+                    </Card>
+                )}
+
+                {rows && (
+                    <section className="pb-4">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                            {(filtered ?? []).map((r) => {
+                                const href = `/admin/sucursales/${r.sucursalId}`;
+                                return (
+                                    <Card
+                                        key={r.sucursalId}
+                                        className="border rounded-2xl shadow-sm hover:shadow-md hover:-translate-y-0.5 transition-transform ease-out cursor-pointer bg-background/90"
+                                        onClick={() => router.push(href)}
+                                        role="button"
+                                        tabIndex={0}
+                                        onKeyDown={(e) => {
+                                            if (e.key === "Enter" || e.key === " ") {
+                                                e.preventDefault();
+                                                router.push(href);
+                                            }
                                         }}
                                     >
-                                        Ver / gestionar
-                                    </Button>
-                                </CardFooter>
-                            </Card>
+                                        <CardHeader className="justify-between items-start gap-2 pb-3">
+                                            <div className="min-w-0 flex items-start gap-3">
+                                                <span className="inline-flex h-9 w-9 items-center justify-center rounded-xl bg-default-100 ring-1 ring-default-200 shrink-0">
+                                                    <Icon icon="solar:buildings-2-bold-duotone" className="text-lg" />
+                                                </span>
+                                                <div className="min-w-0 space-y-0.5">
+                                                    <h3 className="truncate font-semibold">{r.gymNombre}</h3>
+                                                    <p className="truncate text-xs text-foreground-500">
+                                                        {r.gymId} • {r.ciudad}
+                                                    </p>
+                                                    <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-foreground-500">
+                                                        {r.telefono && (
+                                                            <span className="inline-flex items-center gap-1">
+                                                                <Icon icon="solar:phone-bold" />
+                                                                {r.telefono}
+                                                            </span>
+                                                        )}
+                                                        {r.correo && (
+                                                            <span className="inline-flex items-center gap-1">
+                                                                <Icon icon="solar:letter-bold" />
+                                                                {r.correo}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <Chip size="sm" color={estadoColor(r.estado)} variant="flat">
+                                                {r.estado}
+                                            </Chip>
+                                        </CardHeader>
 
-                        );
-                    })}
-                </div>
-            )}
+                                        <CardBody className="pt-0 pb-3">
+                                            <div className="grid grid-cols-2 gap-2 text-center text-sm">
+                                                <div className="rounded-lg bg-default-100/70 p-2">
+                                                    <div className="text-xs text-foreground-500">Miembros</div>
+                                                    <div className="font-semibold tabular-nums">{r.miembros}</div>
+                                                </div>
+                                                <div className="rounded-lg bg-default-100/70 p-2">
+                                                    <div className="text-xs text-foreground-500">Membresías</div>
+                                                    <div className="font-semibold tabular-nums">{r.membresias}</div>
+                                                </div>
+                                            </div>
+                                        </CardBody>
+
+                                        <CardFooter className="pt-0 justify-between">
+                                            <Button
+                                                size="sm"
+                                                variant="flat"
+                                                startContent={<Icon icon="solar:eye-bold-duotone" />}
+                                                onClick={(e) => {
+                                                    e.stopPropagation();
+                                                    router.push(href);
+                                                }}
+                                            >
+                                                Ver / gestionar
+                                            </Button>
+                                        </CardFooter>
+                                    </Card>
+                                );
+                            })}
+                        </div>
+                    </section>
+                )}
+            </div>
 
             {/* Modal crear */}
             <NewGymModal

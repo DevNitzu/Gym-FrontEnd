@@ -13,8 +13,6 @@ import {
     Chip,
     Select,
     SelectItem,
-    RadioGroup,
-    Radio,
     Autocomplete,
     AutocompleteItem,
 } from "@heroui/react";
@@ -37,6 +35,8 @@ interface Cliente {
     telefono: string;
     activo: boolean;
     fecha_creacion: string;
+    genero?: boolean;          // true = masculino, false = femenino
+    fecha_nacimiento?: string; // "2002-01-01T00:00:00"
 }
 
 const API_BASE = "http://localhost:8000/api/v1";
@@ -68,11 +68,11 @@ function calculateAge(
 ): number | "" {
     if (!birthDateStr) return "";
 
-    const birth = new Date(birthDateStr); // "YYYY-MM-DD"
+    const birth = new Date(birthDateStr);
     if (Number.isNaN(birth.getTime())) return "";
 
     const measure = measureDateStr
-        ? new Date(measureDateStr) // "YYYY-MM-DDTHH:MM"
+        ? new Date(measureDateStr)
         : new Date();
 
     if (Number.isNaN(measure.getTime())) return "";
@@ -88,19 +88,26 @@ function calculateAge(
     return years >= 0 ? years : "";
 }
 
+// helper number | "" → number
+function numOr0(v: number | ""): number {
+    return typeof v === "number" ? v : 0;
+}
+
 export default function MedicionPage(): React.JSX.Element {
     const [autoNumber, setAutoNumber] = React.useState("3");
     const [date, setDate] = React.useState(
-        new Date().toISOString().slice(0, 16), // fecha medición
+        new Date().toISOString().slice(0, 16),
     );
-    const [birthDate, setBirthDate] = React.useState<string>(""); // fecha de nacimiento
+
+    const [birthDate, setBirthDate] = React.useState<string>("");
     const [age, setAge] = React.useState<number | "">("");
+
     const [sex, setSex] = React.useState<Sex>("male");
     const [weightKg, setWeightKg] = React.useState<number | "">("");
     const [heightCm, setHeightCm] = React.useState<number | "">("");
     const [musclePercent, setMusclePercent] = React.useState<number | "">("");
     const [notes, setNotes] = React.useState("");
-    const [registeredBy, setRegisteredBy] = React.useState("12345");
+    const [registeredBy, setRegisteredBy] = React.useState("12345"); // por si luego lo usas
     const [measurements, setMeasurements] = React.useState<
         Record<string, number | "">
     >(
@@ -120,7 +127,6 @@ export default function MedicionPage(): React.JSX.Element {
     const [clientLoading, setClientLoading] = React.useState(false);
     const [clientError, setClientError] = React.useState<string | null>(null);
 
-    // Cargar todos los clientes al montar
     React.useEffect(() => {
         async function loadClients() {
             try {
@@ -164,7 +170,6 @@ export default function MedicionPage(): React.JSX.Element {
         loadClients();
     }, []);
 
-    // Filtrar clientes cuando se escribe en el input
     React.useEffect(() => {
         const q = clientQuery.trim().toLowerCase();
         if (!q) {
@@ -190,11 +195,49 @@ export default function MedicionPage(): React.JSX.Element {
         setSelectedClient(c);
         if (c) {
             setClientQuery(`${c.nombre} ${c.apellido}`);
+
+            if (c.fecha_nacimiento) {
+                setBirthDate(c.fecha_nacimiento);
+            } else {
+                setBirthDate("");
+            }
+
+            if (typeof c.genero === "boolean") {
+                setSex(c.genero ? "male" : "female");
+            }
+        } else {
+            setBirthDate("");
         }
     }
 
-    // ==== CÁLCULO AUTOMÁTICO EDAD ====
+    function resetForm() {
+        // Fecha actual
+        setDate(new Date().toISOString().slice(0, 16));
 
+        // Cliente
+        setSelectedClient(null);
+        setClientQuery("");
+        setBirthDate("");
+        setAge("");
+
+        // Datos físicos
+        setSex("male");
+        setWeightKg("");
+        setHeightCm("");
+        setMusclePercent("");
+        setNotes("");
+
+        // Medidas corporales
+        setMeasurements(
+            BODY_MEASURES.reduce(
+                (acc, m) => ({ ...acc, [m.name]: "" }),
+                {} as Record<string, number | "">,
+            ),
+        );
+    }
+
+
+    // ==== CÁLCULO AUTOMÁTICO EDAD ====
     React.useEffect(() => {
         const years = calculateAge(birthDate, date);
         setAge(years);
@@ -278,12 +321,10 @@ export default function MedicionPage(): React.JSX.Element {
         setter(num);
     }
 
-    // Imagen según sexo
     const silhouetteSrc = sex === "female" ? "/persona2.png" : "/persona.png";
     const silhouetteAlt =
         sex === "female" ? "Figura corporal femenina" : "Figura corporal masculina";
 
-    // ==== GUARDAR MEDICIÓN ====
 
     async function handleSave() {
         if (!selectedClient) {
@@ -293,23 +334,24 @@ export default function MedicionPage(): React.JSX.Element {
 
         const payload = {
             id_cliente: selectedClient.id_cliente,
-            autoNumber,
-            date,
-            birthDate,
-            age: age === "" ? null : age,
-            sex,
-            weightKg: weightKg === "" ? null : weightKg,
-            heightCm: heightCm === "" ? null : heightCm,
-            musclePercent: musclePercent === "" ? null : musclePercent,
-            notes,
-            registeredBy,
-            measurements,
-            bmi,
-            bodyFat,
-            waterPercent,
-        };
 
-        console.log("Payload a enviar:", payload);
+            cuello: numOr0(measurements.neck as any),
+            bicep_izquierdo: numOr0(measurements.bicepsLeft as any),
+            bicep_derecho: numOr0(measurements.bicepsRight as any),
+            pecho: numOr0(measurements.chest as any),
+            antebrazo_izquierdo: numOr0(measurements.forearmLeft as any),
+            antebrazo_derecho: numOr0(measurements.forearmRight as any),
+            cintura: numOr0(measurements.waist as any),
+            cadera: numOr0(measurements.hip as any),
+            femoral_izquierdo: numOr0(measurements.thighLeft as any),
+            femoral_derecho: numOr0(measurements.thighRight as any),
+            gemelo_izquierdo: numOr0(measurements.calfLeft as any),
+            gemelo_derecho: numOr0(measurements.calfRight as any),
+            peso: numOr0(weightKg),
+            altura: numOr0(heightCm),
+            musculo: numOr0(musclePercent),
+            fecha_creacion: new Date().toISOString(),
+        };
 
         try {
             let headers: HeadersInit = { "Content-Type": "application/json" };
@@ -325,7 +367,7 @@ export default function MedicionPage(): React.JSX.Element {
                 // ignore
             }
 
-            const res = await fetch(`${API_BASE}/mediciones`, {
+            const res = await fetch(`${API_BASE}/medidas_corporales`, {
                 method: "POST",
                 headers,
                 body: JSON.stringify(payload),
@@ -335,7 +377,10 @@ export default function MedicionPage(): React.JSX.Element {
                 throw new Error(`Error al guardar medición (${res.status})`);
             }
 
-            alert("Medición guardada correctamente.");
+            alert("Medición guardada correctamente en /medidas_corporales.");
+
+            // 🔹 AQUÍ LIMPIAMOS TODO
+            resetForm();
         } catch (err) {
             console.error(err);
             alert("Ocurrió un error al guardar la medición.");
@@ -349,7 +394,6 @@ export default function MedicionPage(): React.JSX.Element {
                     <div className="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,1.1fr)]">
                         {/* IZQUIERDA */}
                         <div className="space-y-6">
-                            {/* Medidas en centímetros */}
                             <Card className="border border-slate-200 bg-white">
                                 <CardHeader className="pb-0">
                                     <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
@@ -358,13 +402,12 @@ export default function MedicionPage(): React.JSX.Element {
                                 </CardHeader>
 
                                 <CardBody className="pt-4 space-y-6">
-                                    {/* Figura con inputs sobrepuestos - solo md+ */}
                                     <div className="hidden justify-center md:flex">
                                         <div className="relative w-full max-w-sm lg:max-w-md">
                                             <img
                                                 src={silhouetteSrc}
                                                 alt={silhouetteAlt}
-                                                className="w-full rounded-2xl border border-slate-200 bg-slate-50"
+                                                className="w-full rounded-2xl border transparent"
                                             />
                                             {BODY_MEASURES.map((m) => (
                                                 <div
@@ -407,12 +450,11 @@ export default function MedicionPage(): React.JSX.Element {
                                             ))}
                                         </div>
                                     </div>
-
                                 </CardBody>
                             </Card>
                         </div>
 
-                        {/* DERECHA - DETALLES + RESULTADOS */}
+                        {/* DERECHA */}
                         <Card className="border border-slate-200 bg-white">
                             {/* Detalles */}
                             <Card className="border border-slate-200 bg-white">
@@ -422,7 +464,6 @@ export default function MedicionPage(): React.JSX.Element {
                                     </h2>
                                 </CardHeader>
                                 <CardBody className="grid gap-4 pt-3 md:grid-cols-3">
-                                    {/* Cliente: Autocomplete */}
                                     <div className="md:col-span-3 flex flex-col gap-1">
                                         <Autocomplete
                                             size="sm"
@@ -434,6 +475,7 @@ export default function MedicionPage(): React.JSX.Element {
                                             onInputChange={(value) => {
                                                 setClientQuery(value);
                                                 setSelectedClient(null);
+                                                setBirthDate("");
                                             }}
                                             selectedKey={
                                                 selectedClient
@@ -442,11 +484,10 @@ export default function MedicionPage(): React.JSX.Element {
                                             }
                                             onSelectionChange={(key) => {
                                                 if (key) {
-                                                    handleSelectClient(
-                                                        Number(key as string),
-                                                    );
+                                                    handleSelectClient(Number(key as string));
                                                 } else {
                                                     setSelectedClient(null);
+                                                    setBirthDate("");
                                                 }
                                             }}
                                             isLoading={clientLoading}
@@ -477,26 +518,6 @@ export default function MedicionPage(): React.JSX.Element {
 
                                     <Input
                                         size="sm"
-                                        label="Número automático"
-                                        value={autoNumber}
-                                        onChange={(e) => setAutoNumber(e.target.value)}
-                                    />
-                                    <Input
-                                        size="sm"
-                                        type="datetime-local"
-                                        label="Fecha medición"
-                                        value={date}
-                                        onChange={(e) => setDate(e.target.value)}
-                                    />
-                                    <Input
-                                        size="sm"
-                                        type="date"
-                                        label="Fecha nacimiento"
-                                        value={birthDate}
-                                        onChange={(e) => setBirthDate(e.target.value)}
-                                    />
-                                    <Input
-                                        size="sm"
                                         label="Edad"
                                         type="number"
                                         readOnly
@@ -507,18 +528,6 @@ export default function MedicionPage(): React.JSX.Element {
                                         }
                                         value={age === "" ? "" : String(age)}
                                     />
-
-                                    <RadioGroup
-                                        size="sm"
-                                        label="Sexo"
-                                        orientation="horizontal"
-                                        value={sex}
-                                        onValueChange={(val) => setSex(val as Sex)}
-                                        className="md:col-span-3"
-                                    >
-                                        <Radio value="male">Masculino</Radio>
-                                        <Radio value="female">Femenino</Radio>
-                                    </RadioGroup>
 
                                     <Input
                                         size="sm"
@@ -569,10 +578,11 @@ export default function MedicionPage(): React.JSX.Element {
                                             )
                                         }
                                     />
+
                                 </CardBody>
                             </Card>
 
-                            {/* Resultados obtenidos */}
+                            {/* Resultados */}
                             <CardHeader className="pb-0">
                                 <h2 className="text-sm font-semibold uppercase tracking-wide text-slate-500">
                                     Resultados obtenidos

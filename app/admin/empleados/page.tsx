@@ -225,14 +225,20 @@ async function apiFetch(path: string, init?: RequestInit) {
 
 /* ====================== API Empleados ====================== */
 // GET /api/v1/empleadodto/empresa/{id_empresa}
-async function listEmpleadosByEmpresaDTO(id_empresa: number): Promise<EmpleadoUI[]> {
-    const json = await apiFetch(`/api/v1/empleadodto/empresa/${encodeURIComponent(id_empresa)}`);
+async function listEmpleadosByEmpresaDTO(
+    id_empresa: number
+): Promise<EmpleadoUI[]> {
+    const json = await apiFetch(
+        `/api/v1/empleadodto/empresa/${encodeURIComponent(id_empresa)}`
+    );
     const arr: EmpleadoDTO[] = Array.isArray(json?.data) ? json.data : [];
     return arr.map((dto) => normDtoToUI(dto, id_empresa));
 }
 
 async function createEmpleado(body: EmpleadoUI): Promise<EmpleadoUI> {
-    const payload: Omit<ApiEmpleado, "id_empleado" | "activo"> & { contrasena?: string } = {
+    const payload: Omit<ApiEmpleado, "id_empleado" | "activo"> & {
+        contrasena?: string;
+    } = {
         nombre: body.nombre,
         apellido: body.apellido,
         cedula: body.cedula,
@@ -279,8 +285,12 @@ async function deleteEmpleadoApi(id_empleado: number): Promise<void> {
 }
 
 /* ====================== API Gimnasios ====================== */
-async function listGimnasiosByEmpresa(id_empresa: number): Promise<GymOption[]> {
-    const data = await apiFetch(`/api/v1/gimnasios/${encodeURIComponent(id_empresa)}`);
+async function listGimnasiosByEmpresa(
+    id_empresa: number
+): Promise<GymOption[]> {
+    const data = await apiFetch(
+        `/api/v1/gimnasios/${encodeURIComponent(id_empresa)}`
+    );
     const list: ApiGimnasio[] = Array.isArray(data)
         ? data
         : Array.isArray((data as any)?.items)
@@ -294,7 +304,9 @@ async function listGimnasiosByEmpresa(id_empresa: number): Promise<GymOption[]> 
 }
 
 /* ====================== API Empleado DTO & Asignaciones ====================== */
-async function fetchEmpleadoDTO(id_empleado: number): Promise<EmpleadoDTO | null> {
+async function fetchEmpleadoDTO(
+    id_empleado: number
+): Promise<EmpleadoDTO | null> {
     const dto = await apiFetch(`/api/v1/empleadodto/empleado/${id_empleado}`);
     if (!dto || !dto.empleado) return null;
     return dto as EmpleadoDTO;
@@ -317,7 +329,10 @@ async function createEmpleadoAsignacion(
 
 async function updateEmpleadoAsignacion(
     id_empleado_asignacion: number,
-    body: Pick<ApiEmpleadoAsignacion, "id_empresa" | "id_gimnasio" | "id_empleado" | "id_tipo_empleado">
+    body: Pick<
+        ApiEmpleadoAsignacion,
+        "id_empresa" | "id_gimnasio" | "id_empleado" | "id_tipo_empleado"
+    >
 ): Promise<ApiEmpleadoAsignacion> {
     return apiFetch(`/api/v1/empleado_asignacion/${id_empleado_asignacion}`, {
         method: "PUT",
@@ -328,7 +343,9 @@ async function updateEmpleadoAsignacion(
     });
 }
 
-async function deleteEmpleadoAsignacion(id_empleado_asignacion: number): Promise<void> {
+async function deleteEmpleadoAsignacion(
+    id_empleado_asignacion: number
+): Promise<void> {
     await apiFetch(`/api/v1/empleado_asignacion/${id_empleado_asignacion}`, {
         method: "DELETE",
     });
@@ -347,7 +364,8 @@ export default function EmpleadosPage() {
     const modalEmpleado = useDisclosure();
 
     // Modal de Asignaciones
-    const [asigEmpleado, setAsigEmpleado] = React.useState<EmpleadoUI | null>(null);
+    const [asigEmpleado, setAsigEmpleado] =
+        React.useState<EmpleadoUI | null>(null);
     const modalAsig = useDisclosure();
 
     // Gimnasios
@@ -364,7 +382,8 @@ export default function EmpleadosPage() {
                 setErr(null);
                 const { empresa } = getSession();
                 const empresaId = Number(empresa || 0);
-                if (!empresaId) throw new Error("No se encontró id_empresa en la sesión.");
+                if (!empresaId)
+                    throw new Error("No se encontró id_empresa en la sesión.");
                 const all = await listEmpleadosByEmpresaDTO(empresaId);
                 if (!alive) return;
                 setRows(all);
@@ -382,7 +401,8 @@ export default function EmpleadosPage() {
                 setGymsErr(null);
                 const { empresa } = getSession();
                 const empresaId = Number(empresa || 0);
-                if (!empresaId) throw new Error("No se encontró id_empresa en la sesión.");
+                if (!empresaId)
+                    throw new Error("No se encontró id_empresa en la sesión.");
                 const g = await listGimnasiosByEmpresa(empresaId);
                 if (!alive) return;
                 setGyms(g);
@@ -512,198 +532,252 @@ export default function EmpleadosPage() {
     }
 
     return (
-        <div className="space-y-6">
-            {/* Header */}
-            <div className="flex flex-wrap items-center justify-between gap-3">
-                <h1 className="text-2xl font-bold">Empleados</h1>
-                <div className="flex w-full sm:w-auto flex-wrap items-center gap-2">
-                    <Input
-                        aria-label="Buscar empleados"
-                        placeholder="Buscar por nombre, correo, cédula…"
-                        variant="bordered"
-                        value={q}
-                        onValueChange={setQ}
-                        startContent={<Icon icon="mdi:magnify" width={18} height={18} />}
-                        className="w-full sm:w-64 md:w-72"
-                    />
-                    <Button
-                        color="primary"
-                        startContent={<Icon icon="mdi:account-plus" width={18} height={18} />}
-                        onPress={onNew}
-                        className="w-full sm:w-auto"
-                    >
-                        Nuevo
-                    </Button>
-                </div>
-            </div>
-
-            {!!notif && (
-                <Chip
-                    color={notif.includes("No se pudo") ? "warning" : "success"}
-                    variant="flat"
-                >
-                    {notif}
-                </Chip>
-            )}
-
-            <Card className="border">
-                <CardHeader className="font-semibold">Listado</CardHeader>
-                <CardBody>
-                    {loading ? (
-                        <div className="flex items-center justify-center py-10">
-                            <Spinner size="lg" />
+        <div className="w-full h-full">
+            <div className="mx-auto max-w-6xl px-4 sm:px-6 lg:px-8 py-4 sm:py-6 space-y-6">
+                {/* Header */}
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div className="flex items-center gap-3">
+                        <span className="inline-flex h-10 w-10 items-center justify-center rounded-2xl bg-default-100 ring-1 ring-default-200">
+                            <Icon icon="solar:users-group-two-rounded-bold-duotone" className="text-xl" />
+                        </span>
+                        <div className="flex flex-col gap-0.5">
+                            <h1 className="text-xl sm:text-2xl font-bold leading-tight">
+                                Empleados
+                            </h1>
+                            <p className="text-xs text-default-500">
+                                Gestiona el personal y sus asignaciones por gimnasio.
+                            </p>
                         </div>
-                    ) : err ? (
-                        <div className="text-center text-warning-600">{err}</div>
-                    ) : (
-                        <>
-                            {/* Mobile (cards) */}
-                            <div className="sm:hidden space-y-3">
-                                {filtrados.length === 0 && (
-                                    <div className="text-center text-default-500 py-8">
-                                        Sin resultados
-                                    </div>
-                                )}
+                    </div>
 
-                                {filtrados.map((e) => (
-                                    <div key={e.id_empleado} className="rounded-xl border p-3">
-                                        <div className="flex items-start gap-3">
-                                            <Avatar
-                                                isBordered
-                                                radius="full"
-                                                size="sm"
-                                                src={e.avatarUrl}
-                                                name={e.nombres}
-                                            />
-                                            <div className="flex-1 min-w-0">
-                                                <div className="flex items-center justify-between gap-2">
-                                                    <div className="font-medium truncate">{e.nombres}</div>
-                                                </div>
-                                                <div className="text-xs text-default-500 mt-1">
-                                                    ID: {e.id_empleado}
-                                                </div>
-                                                <div className="mt-2 grid grid-cols-1 gap-1 text-sm">
-                                                    <span className="break-words">{e.email}</span>
-                                                    <span className="text-default-500">
-                                                        C.I.: {e.cedula || "—"}
-                                                    </span>
-                                                    {e.telefono && (
-                                                        <span className="text-default-500">{e.telefono}</span>
-                                                    )}
-                                                </div>
-                                            </div>
-                                        </div>
+                    <div className="flex w-full sm:w-auto flex-wrap items-center gap-2">
+                        <Input
+                            aria-label="Buscar empleados"
+                            placeholder="Buscar por nombre, correo, cédula…"
+                            variant="bordered"
+                            value={q}
+                            onValueChange={setQ}
+                            startContent={<Icon icon="mdi:magnify" width={18} height={18} />}
+                            className="w-full sm:w-64 md:w-72"
+                            radius="lg"
+                            size="sm"
+                        />
+                        <Button
+                            color="primary"
+                            startContent={
+                                <Icon icon="mdi:account-plus" width={18} height={18} />
+                            }
+                            onPress={onNew}
+                            className="w-full sm:w-auto"
+                        >
+                            Nuevo
+                        </Button>
+                    </div>
+                </div>
 
-                                        <div className="mt-3 flex items-center justify-end gap-2">
-                                            <Button size="sm" variant="light" onPress={() => onEdit(e)}>
-                                                <Icon icon="mdi:pencil" width={18} height={18} />
-                                            </Button>
-                                            <Button
-                                                size="sm"
-                                                variant="flat"
-                                                onPress={() => openAsignaciones(e)}
-                                                startContent={<Icon icon="solar:map-point-bold-duotone" />}
-                                            >
-                                                Asignaciones
-                                            </Button>
-                                            <Button
-                                                size="sm"
-                                                color="danger"
-                                                variant="light"
-                                                onPress={() => onDelete(e.id_empleado)}
-                                            >
-                                                <Icon icon="mdi:trash-can" width={18} height={18} />
-                                            </Button>
-                                        </div>
-                                    </div>
-                                ))}
+                {!!notif && (
+                    <Chip
+                        color={notif.includes("No se pudo") ? "warning" : "success"}
+                        variant="flat"
+                    >
+                        {notif}
+                    </Chip>
+                )}
+
+                <Card className="border bg-background/80 backdrop-blur rounded-2xl shadow-sm">
+                    <CardHeader className="font-semibold border-b border-default-100 py-3 px-4 sm:px-6">
+                        Listado de empleados
+                    </CardHeader>
+                    <CardBody className="p-4 sm:p-6">
+                        {loading ? (
+                            <div className="flex items-center justify-center py-10">
+                                <Spinner size="lg" />
                             </div>
+                        ) : err ? (
+                            <div className="text-center text-warning-600">{err}</div>
+                        ) : (
+                            <>
+                                {/* Mobile (cards) */}
+                                <div className="sm:hidden space-y-3">
+                                    {filtrados.length === 0 && (
+                                        <div className="text-center text-default-500 py-8">
+                                            Sin resultados
+                                        </div>
+                                    )}
 
-                            {/* Desktop (tabla) */}
-                            <div className="hidden sm:block">
-                                <Table aria-label="Tabla de empleados" removeWrapper>
-                                    <TableHeader>
-                                        <TableColumn>EMPLEADO</TableColumn>
-                                        <TableColumn>CÉDULA</TableColumn>
-                                        <TableColumn>CORREO</TableColumn>
-                                        <TableColumn className="text-right">ACCIONES</TableColumn>
-                                    </TableHeader>
-                                    <TableBody emptyContent="Sin resultados">
-                                        {filtrados.map((e) => (
-                                            <TableRow key={e.id_empleado}>
-                                                <TableCell>
-                                                    <div className="flex items-center gap-3">
-                                                        <Avatar
-                                                            isBordered
-                                                            radius="full"
-                                                            size="sm"
-                                                            src={e.avatarUrl}
-                                                            name={e.nombres}
-                                                        />
-                                                        <div className="flex flex-col">
-                                                            <span className="font-medium">{e.nombres}</span>
-                                                            {e.telefono ? (
-                                                                <span className="text-xs text-default-500">
-                                                                    {e.telefono}
-                                                                </span>
-                                                            ) : null}
+                                    {filtrados.map((e) => (
+                                        <div
+                                            key={e.id_empleado}
+                                            className="rounded-xl border bg-background/90 p-3 shadow-sm"
+                                        >
+                                            <div className="flex items-start gap-3">
+                                                <Avatar
+                                                    isBordered
+                                                    radius="full"
+                                                    size="sm"
+                                                    src={e.avatarUrl}
+                                                    name={e.nombres}
+                                                />
+                                                <div className="flex-1 min-w-0">
+                                                    <div className="flex items-center justify-between gap-2">
+                                                        <div className="font-medium truncate">
+                                                            {e.nombres}
                                                         </div>
                                                     </div>
-                                                </TableCell>
-                                                <TableCell>{e.cedula}</TableCell>
-                                                <TableCell className="break-words">{e.email}</TableCell>
-                                                <TableCell className="text-right">
-                                                    <div className="flex justify-end gap-2">
-                                                        <Button size="sm" variant="light" onPress={() => onEdit(e)}>
-                                                            <Icon icon="mdi:pencil" width={18} height={18} />
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            variant="flat"
-                                                            onPress={() => openAsignaciones(e)}
-                                                            startContent={<Icon icon="solar:map-point-bold-duotone" />}
-                                                        >
-                                                            Asignaciones
-                                                        </Button>
-                                                        <Button
-                                                            size="sm"
-                                                            color="danger"
-                                                            variant="light"
-                                                            onPress={() => onDelete(e.id_empleado)}
-                                                        >
-                                                            <Icon icon="mdi:trash-can" width={18} height={18} />
-                                                        </Button>
+                                                    <div className="text-xs text-default-500 mt-1">
+                                                        ID: {e.id_empleado}
                                                     </div>
-                                                </TableCell>
-                                            </TableRow>
-                                        ))}
-                                    </TableBody>
-                                </Table>
-                            </div>
-                        </>
-                    )}
-                </CardBody>
-            </Card>
+                                                    <div className="mt-2 grid grid-cols-1 gap-1 text-sm">
+                                                        <span className="break-words">{e.email}</span>
+                                                        <span className="text-default-500">
+                                                            C.I.: {e.cedula || "—"}
+                                                        </span>
+                                                        {e.telefono && (
+                                                            <span className="text-default-500">
+                                                                {e.telefono}
+                                                            </span>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
 
-            {/* Modal Empleado */}
-            <EmpleadoModal
-                isOpen={modalEmpleado.isOpen}
-                onOpenChange={modalEmpleado.onOpenChange}
-                data={editing}
-                setData={setEditing}
-                onSave={onSaveEmpleado}
-                saving={saving}
-            />
+                                            <div className="mt-3 flex items-center justify-end gap-2">
+                                                <Button
+                                                    size="sm"
+                                                    variant="light"
+                                                    onPress={() => onEdit(e)}
+                                                >
+                                                    <Icon icon="mdi:pencil" width={18} height={18} />
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    variant="flat"
+                                                    onPress={() => openAsignaciones(e)}
+                                                    startContent={
+                                                        <Icon icon="solar:map-point-bold-duotone" />
+                                                    }
+                                                >
+                                                    Asignaciones
+                                                </Button>
+                                                <Button
+                                                    size="sm"
+                                                    color="danger"
+                                                    variant="light"
+                                                    onPress={() => onDelete(e.id_empleado)}
+                                                >
+                                                    <Icon icon="mdi:trash-can" width={18} height={18} />
+                                                </Button>
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
 
-            {/* Modal Asignaciones */}
-            <AsignacionesModal
-                isOpen={modalAsig.isOpen}
-                onOpenChange={modalAsig.onOpenChange}
-                empleado={asigEmpleado}
-                gyms={gyms}
-                gymsLoading={gymsLoading}
-                gymsErr={gymsErr}
-            />
+                                {/* Desktop (tabla) */}
+                                <div className="hidden sm:block">
+                                    <Table aria-label="Tabla de empleados" removeWrapper>
+                                        <TableHeader>
+                                            <TableColumn>EMPLEADO</TableColumn>
+                                            <TableColumn>CÉDULA</TableColumn>
+                                            <TableColumn>CORREO</TableColumn>
+                                            <TableColumn className="text-right">
+                                                ACCIONES
+                                            </TableColumn>
+                                        </TableHeader>
+                                        <TableBody emptyContent="Sin resultados">
+                                            {filtrados.map((e) => (
+                                                <TableRow key={e.id_empleado}>
+                                                    <TableCell>
+                                                        <div className="flex items-center gap-3">
+                                                            <Avatar
+                                                                isBordered
+                                                                radius="full"
+                                                                size="sm"
+                                                                src={e.avatarUrl}
+                                                                name={e.nombres}
+                                                            />
+                                                            <div className="flex flex-col">
+                                                                <span className="font-medium">
+                                                                    {e.nombres}
+                                                                </span>
+                                                                {e.telefono ? (
+                                                                    <span className="text-xs text-default-500">
+                                                                        {e.telefono}
+                                                                    </span>
+                                                                ) : null}
+                                                            </div>
+                                                        </div>
+                                                    </TableCell>
+                                                    <TableCell>{e.cedula}</TableCell>
+                                                    <TableCell className="break-words">
+                                                        {e.email}
+                                                    </TableCell>
+                                                    <TableCell className="text-right">
+                                                        <div className="flex justify-end gap-2">
+                                                            <Button
+                                                                size="sm"
+                                                                variant="light"
+                                                                onPress={() => onEdit(e)}
+                                                            >
+                                                                <Icon
+                                                                    icon="mdi:pencil"
+                                                                    width={18}
+                                                                    height={18}
+                                                                />
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                variant="flat"
+                                                                onPress={() => openAsignaciones(e)}
+                                                                startContent={
+                                                                    <Icon icon="solar:map-point-bold-duotone" />
+                                                                }
+                                                            >
+                                                                Asignaciones
+                                                            </Button>
+                                                            <Button
+                                                                size="sm"
+                                                                color="danger"
+                                                                variant="light"
+                                                                onPress={() => onDelete(e.id_empleado)}
+                                                            >
+                                                                <Icon
+                                                                    icon="mdi:trash-can"
+                                                                    width={18}
+                                                                    height={18}
+                                                                />
+                                                            </Button>
+                                                        </div>
+                                                    </TableCell>
+                                                </TableRow>
+                                            ))}
+                                        </TableBody>
+                                    </Table>
+                                </div>
+                            </>
+                        )}
+                    </CardBody>
+                </Card>
+
+                {/* Modal Empleado */}
+                <EmpleadoModal
+                    isOpen={modalEmpleado.isOpen}
+                    onOpenChange={modalEmpleado.onOpenChange}
+                    data={editing}
+                    setData={setEditing}
+                    onSave={onSaveEmpleado}
+                    saving={saving}
+                />
+
+                {/* Modal Asignaciones */}
+                <AsignacionesModal
+                    isOpen={modalAsig.isOpen}
+                    onOpenChange={modalAsig.onOpenChange}
+                    empleado={asigEmpleado}
+                    gyms={gyms}
+                    gymsLoading={gymsLoading}
+                    gymsErr={gymsErr}
+                />
+            </div>
         </div>
     );
 }
@@ -734,6 +808,7 @@ function EmpleadoModal({
             isKeyboardDismissDisabled
             placement="center"
             size="lg"
+            backdrop="opaque"
         >
             <ModalContent>
                 {(onClose) => (
@@ -750,7 +825,13 @@ function EmpleadoModal({
                                     value={data.nombre}
                                     onValueChange={(v) =>
                                         setData((p) =>
-                                            p ? { ...p, nombre: v, nombres: `${v} ${p.apellido}`.trim() } : p
+                                            p
+                                                ? {
+                                                    ...p,
+                                                    nombre: v,
+                                                    nombres: `${v} ${p.apellido}`.trim(),
+                                                }
+                                                : p
                                         )
                                     }
                                     isRequired
@@ -761,7 +842,13 @@ function EmpleadoModal({
                                     value={data.apellido}
                                     onValueChange={(v) =>
                                         setData((p) =>
-                                            p ? { ...p, apellido: v, nombres: `${p?.nombre ?? ""} ${v}`.trim() } : p
+                                            p
+                                                ? {
+                                                    ...p,
+                                                    apellido: v,
+                                                    nombres: `${p?.nombre ?? ""} ${v}`.trim(),
+                                                }
+                                                : p
                                         )
                                     }
                                     isRequired
@@ -770,7 +857,9 @@ function EmpleadoModal({
                                     label="Cédula"
                                     variant="bordered"
                                     value={data.cedula}
-                                    onValueChange={(v) => setData((p) => (p ? { ...p, cedula: v } : p))}
+                                    onValueChange={(v) =>
+                                        setData((p) => (p ? { ...p, cedula: v } : p))
+                                    }
                                     isRequired
                                 />
                                 <Input
@@ -778,7 +867,9 @@ function EmpleadoModal({
                                     type="email"
                                     variant="bordered"
                                     value={data.email}
-                                    onValueChange={(v) => setData((p) => (p ? { ...p, email: v } : p))}
+                                    onValueChange={(v) =>
+                                        setData((p) => (p ? { ...p, email: v } : p))
+                                    }
                                     isRequired
                                 />
                                 <Input
@@ -841,7 +932,10 @@ function AsignacionesModal({
     const [savingId, setSavingId] = React.useState<number | "new" | null>(null);
 
     const gymOpts = React.useMemo(
-        () => [{ key: "0", label: "Sin asignación" }, ...gyms.map((g) => ({ key: g.key, label: g.label }))],
+        () => [
+            { key: "0", label: "Sin asignación" },
+            ...gyms.map((g) => ({ key: g.key, label: g.label })),
+        ],
         [gyms]
     );
 
@@ -898,7 +992,8 @@ function AsignacionesModal({
                         const m = all.find(
                             (x) =>
                                 Number(x.id_empleado) === Number(empleado.id_empleado) &&
-                                Number(x.id_empresa ?? empresaId) === Number(a.id_empresa ?? empresaId) &&
+                                Number(x.id_empresa ?? empresaId) ===
+                                Number(a.id_empresa ?? empresaId) &&
                                 Number(x.id_gimnasio) === Number(a.id_gimnasio ?? 0) &&
                                 Number(x.id_tipo_empleado ?? DEFAULT_TIPO) ===
                                 Number(a.id_tipo_empleado ?? DEFAULT_TIPO)
@@ -922,7 +1017,10 @@ function AsignacionesModal({
                     else {
                         // Si hay duplicados, prioriza el que tenga ID real
                         const prev = uniqueMap.get(key)!;
-                        if ((r.id_empleado_asignacion ?? 0) > 0 && (prev.id_empleado_asignacion ?? 0) === 0) {
+                        if (
+                            (r.id_empleado_asignacion ?? 0) > 0 &&
+                            (prev.id_empleado_asignacion ?? 0) === 0
+                        ) {
                             uniqueMap.set(key, r);
                         }
                     }
@@ -964,7 +1062,11 @@ function AsignacionesModal({
     async function saveRow(r: ApiEmpleadoAsignacion) {
         if (!empleado?.id_empleado) return;
         const tipo = Number(r.id_tipo_empleado ?? DEFAULT_TIPO);
-        setSavingId(r.id_empleado_asignacion && r.id_empleado_asignacion > 0 ? r.id_empleado_asignacion : "new");
+        setSavingId(
+            r.id_empleado_asignacion && r.id_empleado_asignacion > 0
+                ? r.id_empleado_asignacion
+                : "new"
+        );
         try {
             if (r.id_empleado_asignacion && r.id_empleado_asignacion > 0) {
                 await updateEmpleadoAsignacion(r.id_empleado_asignacion, {
@@ -982,7 +1084,9 @@ function AsignacionesModal({
                     id_tipo_empleado: tipo,
                 });
                 setRows((prev) =>
-                    prev.map((x) => (x === r ? { ...created, activo: created.activo ?? true } : x))
+                    prev.map((x) =>
+                        x === r ? { ...created, activo: created.activo ?? true } : x
+                    )
                 );
                 setMsg("Asignación creada.");
             }
@@ -1013,12 +1117,22 @@ function AsignacionesModal({
         const snapshot = rows;
         try {
             await deleteEmpleadoAsignacion(idToDelete);
-            setRows((prev) => prev.filter((x) => Number(x.id_empleado_asignacion ?? 0) !== idToDelete && x !== r));
+            setRows((prev) =>
+                prev.filter(
+                    (x) =>
+                        Number(x.id_empleado_asignacion ?? 0) !== idToDelete && x !== r
+                )
+            );
             setMsg("Asignación eliminada.");
         } catch (e: any) {
             const msg = String(e?.message || "");
             if (msg.includes("404")) {
-                setRows((prev) => prev.filter((x) => Number(x.id_empleado_asignacion ?? 0) !== idToDelete && x !== r));
+                setRows((prev) =>
+                    prev.filter(
+                        (x) =>
+                            Number(x.id_empleado_asignacion ?? 0) !== idToDelete && x !== r
+                    )
+                );
                 setMsg("Asignación eliminada (no existía en el servidor).");
             } else {
                 setMsg(e?.message || "No se pudo eliminar la asignación.");
@@ -1045,7 +1159,8 @@ function AsignacionesModal({
     };
 
     const getGymLabel = (id: number) =>
-        gyms.find((g) => g.value === id)?.label ?? (id ? `#${id}` : "Sin asignación");
+        gyms.find((g) => g.value === id)?.label ??
+        (id ? `#${id}` : "Sin asignación");
 
     return (
         <Modal
@@ -1067,14 +1182,21 @@ function AsignacionesModal({
                         </ModalHeader>
                         <ModalBody className="space-y-4">
                             {msg && (
-                                <Chip variant="flat" color={msg.includes("No se pudo") ? "warning" : "success"}>
+                                <Chip
+                                    variant="flat"
+                                    color={msg.includes("No se pudo") ? "warning" : "success"}
+                                >
                                     {msg}
                                 </Chip>
                             )}
 
                             <div className="flex justify-between items-center">
                                 <div className="text-sm text-default-500">
-                                    {gymsLoading ? "Cargando gimnasios…" : gymsErr ? gymsErr : `Gimnasios disponibles: ${gyms.length}`}
+                                    {gymsLoading
+                                        ? "Cargando gimnasios…"
+                                        : gymsErr
+                                            ? gymsErr
+                                            : `Gimnasios disponibles: ${gyms.length}`}
                                 </div>
                                 <Button
                                     size="sm"
@@ -1086,7 +1208,7 @@ function AsignacionesModal({
                                 </Button>
                             </div>
 
-                            <Card className="border">
+                            <Card className="border bg-background/70 rounded-2xl">
                                 <CardBody className="p-0">
                                     {loading ? (
                                         <div className="flex items-center justify-center py-10">
@@ -1097,16 +1219,26 @@ function AsignacionesModal({
                                             <TableHeader>
                                                 <TableColumn width={140}>ID</TableColumn>
                                                 <TableColumn>GIMNASIO</TableColumn>
-                                                <TableColumn className="text-right" width={200}>ACCIONES</TableColumn>
+                                                <TableColumn className="text-right" width={200}>
+                                                    ACCIONES
+                                                </TableColumn>
                                             </TableHeader>
                                             <TableBody emptyContent="Sin asignaciones">
                                                 {rows.map((r, idx) => (
-                                                    <TableRow key={`${r.id_empleado_asignacion || "new"}-${r.id_gimnasio}-${r.id_tipo_empleado}-${idx}`}>
+                                                    <TableRow
+                                                        key={`${r.id_empleado_asignacion || "new"
+                                                            }-${r.id_gimnasio}-${r.id_tipo_empleado}-${idx}`}
+                                                    >
                                                         <TableCell>
-                                                            {r.id_empleado_asignacion && r.id_empleado_asignacion > 0 ? (
-                                                                <Chip size="sm" variant="flat">#{r.id_empleado_asignacion}</Chip>
+                                                            {r.id_empleado_asignacion &&
+                                                                r.id_empleado_asignacion > 0 ? (
+                                                                <Chip size="sm" variant="flat">
+                                                                    #{r.id_empleado_asignacion}
+                                                                </Chip>
                                                             ) : (
-                                                                <Chip size="sm" color="primary" variant="flat">Nuevo</Chip>
+                                                                <Chip size="sm" color="primary" variant="flat">
+                                                                    Nuevo
+                                                                </Chip>
                                                             )}
                                                         </TableCell>
 
@@ -1115,7 +1247,11 @@ function AsignacionesModal({
                                                                 aria-label="Gimnasio"
                                                                 selectionMode="single"
                                                                 disallowEmptySelection
-                                                                selectedKeys={new Set([String(r.id_gimnasio ?? 0)]) as unknown as Selection}
+                                                                selectedKeys={
+                                                                    new Set([
+                                                                        String(r.id_gimnasio ?? 0),
+                                                                    ]) as unknown as Selection
+                                                                }
                                                                 onSelectionChange={(keys: Selection) => {
                                                                     const picked = pickFirstKey(keys);
                                                                     const id = Number(picked) || 0;
@@ -1123,8 +1259,14 @@ function AsignacionesModal({
                                                                 }}
                                                                 items={gymOpts}
                                                                 className="min-w-[220px]"
+                                                                radius="lg"
+                                                                size="sm"
                                                             >
-                                                                {(item) => <SelectItem key={item.key}>{item.label}</SelectItem>}
+                                                                {(item) => (
+                                                                    <SelectItem key={item.key}>
+                                                                        {item.label}
+                                                                    </SelectItem>
+                                                                )}
                                                             </Select>
                                                         </TableCell>
 
@@ -1135,12 +1277,15 @@ function AsignacionesModal({
                                                                     variant="flat"
                                                                     isLoading={
                                                                         savingId ===
-                                                                        (r.id_empleado_asignacion && r.id_empleado_asignacion > 0
+                                                                        (r.id_empleado_asignacion &&
+                                                                            r.id_empleado_asignacion > 0
                                                                             ? r.id_empleado_asignacion
                                                                             : "new")
                                                                     }
                                                                     onPress={() => saveRow(r)}
-                                                                    startContent={<Icon icon="mdi:content-save" />}
+                                                                    startContent={
+                                                                        <Icon icon="mdi:content-save" />
+                                                                    }
                                                                 >
                                                                     Guardar
                                                                 </Button>
@@ -1149,7 +1294,9 @@ function AsignacionesModal({
                                                                     color="danger"
                                                                     variant="light"
                                                                     onPress={() => removeRow(r)}
-                                                                    startContent={<Icon icon="mdi:trash-can" />}
+                                                                    startContent={
+                                                                        <Icon icon="mdi:trash-can" />
+                                                                    }
                                                                 >
                                                                     Eliminar
                                                                 </Button>
@@ -1174,7 +1321,9 @@ function AsignacionesModal({
                             </div>
                         </ModalBody>
                         <ModalFooter>
-                            <Button variant="light" onPress={onClose}>Cerrar</Button>
+                            <Button variant="light" onPress={onClose}>
+                                Cerrar
+                            </Button>
                         </ModalFooter>
                     </>
                 )}

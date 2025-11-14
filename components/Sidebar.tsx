@@ -18,7 +18,9 @@ function useEmpresaId() {
         const ls = localStorage.getItem("auth:empresaId");
         const value = empresaFromQuery || ls || null;
         if (empresaFromQuery) {
-            try { localStorage.setItem("auth:empresaId", empresaFromQuery); } catch { }
+            try {
+                localStorage.setItem("auth:empresaId", empresaFromQuery);
+            } catch { }
         }
         setEmpresaId(value);
     }, [empresaFromQuery]);
@@ -109,6 +111,16 @@ const I = {
             <path fill="currentColor" d="M12 3L2 9l10 6l10-6l-10-6zm0 8.25L5.14 9L12 5.75L18.86 9L12 11.25zM2 13v8l10 6l10-6v-8l-2 1.2v6.8l-8 4.8l-8-4.8v-6.8L2 13z" />
         </svg>
     ),
+    Challenge: (p: React.SVGProps<SVGSVGElement>) => (
+        <svg viewBox="0 0 24 24" {...p}>
+            <path fill="currentColor" d="M12 2l3.09 6.26L22 9.27l-5 4.87L18.18 22L12 18.56L5.82 22L7 14.14l-5-4.87l6.91-1.01L12 2z" />
+        </svg>
+    ),
+    Podio: (p: React.SVGProps<SVGSVGElement>) => (
+        <svg viewBox="0 0 24 24" {...p}>
+            <path fill="currentColor" d="M4 4h16v16H4z M6 6v12h12V6H6z" />
+        </svg>
+    ),
 };
 
 /* =========================
@@ -116,9 +128,17 @@ const I = {
 ========================= */
 
 function NavItem({
-    href, label, icon, collapsed, onNavigate,
+    href,
+    label,
+    icon,
+    collapsed,
+    onNavigate,
 }: {
-    href: string; label: string; icon: React.ReactNode; collapsed: boolean; onNavigate?: () => void;
+    href: string;
+    label: string;
+    icon: React.ReactNode;
+    collapsed: boolean;
+    onNavigate?: () => void;
 }) {
     const active = useIsActive(href);
     return (
@@ -135,7 +155,12 @@ function NavItem({
                 "focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60",
             ].join(" ")}
         >
-            <span className={["grid place-items-center", collapsed ? "mx-auto" : ""].join(" ")}>
+            <span
+                className={[
+                    "grid place-items-center",
+                    collapsed ? "mx-auto" : "",
+                ].join(" ")}
+            >
                 {icon}
             </span>
             {!collapsed && <span className="truncate">{label}</span>}
@@ -149,13 +174,15 @@ function NavItem({
 
 export default function AdminSidebar() {
     const empresaId = useEmpresaId();
-    const [open, setOpen] = React.useState(false);           // drawer móvil
+    const [open, setOpen] = React.useState(false); // drawer móvil
     const [collapsed, setCollapsed] = React.useState(false); // colapso md+
     const [mounted, setMounted] = React.useState(false);
 
     React.useEffect(() => {
         setMounted(true);
-        try { localStorage.removeItem("gymId"); } catch { }
+        try {
+            localStorage.removeItem("gymId");
+        } catch { }
         try {
             const v = localStorage.getItem("ui:sidebarCollapsed");
             if (v === "1") setCollapsed(true);
@@ -166,7 +193,9 @@ export default function AdminSidebar() {
         if (!open) return;
         const prev = document.body.style.overflow;
         document.body.style.overflow = "hidden";
-        return () => { document.body.style.overflow = prev; };
+        return () => {
+            document.body.style.overflow = prev;
+        };
     }, [open]);
 
     const baseQueryStr = React.useMemo(() => {
@@ -180,7 +209,9 @@ export default function AdminSidebar() {
     const toggleCollapsed = React.useCallback(() => {
         setCollapsed((v) => {
             const nv = !v;
-            try { localStorage.setItem("ui:sidebarCollapsed", nv ? "1" : "0"); } catch { }
+            try {
+                localStorage.setItem("ui:sidebarCollapsed", nv ? "1" : "0");
+            } catch { }
             return nv;
         });
     }, []);
@@ -197,16 +228,62 @@ export default function AdminSidebar() {
     if (!mounted) return null;
 
     const LINKS = [
-        { href: `/admin/dashboard${baseQueryStr}`, label: "Dashboard", icon: <I.Dashboard className="h-4 w-4" /> },
-        { href: `/admin/gimnasios${baseQueryStr}`, label: "Gimnasios", icon: <I.Gym className="h-4 w-4" /> },
+        {
+            href: `/admin/dashboard${baseQueryStr}`,
+            label: "Dashboard",
+            icon: <I.Dashboard className="h-4 w-4" />,
+        },
+        {
+            href: `/admin/gimnasios${baseQueryStr}`,
+            label: "Gimnasios",
+            icon: <I.Gym className="h-4 w-4" />,
+        },
         { href: `/admin/historial`, label: "Historial", icon: <I.History className="h-4 w-4" /> },
-        { href: `/admin/empleados${baseQueryStr}`, label: "Empleados", icon: <I.Users className="h-4 w-4" /> },
-        { href: `/admin/clientes${baseQueryStr}`, label: "Clientes", icon: <I.Client className="h-4 w-4" /> },
-        { href: `/admin/mediciones${baseQueryStr}`, label: "Mediciones", icon: <I.Mediciones className="h-4 w-4" /> },
-        { href: `/admin/movil${baseQueryStr}`, label: "Aplicación Móvil", icon: <I.Apps className="h-4 w-4" /> },
-        { href: `/admin/marketing${baseQueryStr}`, label: "Marketing", icon: <I.Marketing className="h-4 w-4" /> },
-        { href: `/admin/configuracion${baseQueryStr}`, label: "Configuración", icon: <I.Settings className="h-4 w-4" /> },
-        { href: `/admin/perfil${baseQueryStr}`, label: "Perfil", icon: <I.Profile className="h-4 w-4" /> },
+        {
+            href: `/admin/empleados${baseQueryStr}`,
+            label: "Empleados",
+            icon: <I.Users className="h-4 w-4" />,
+        },
+        {
+            href: `/admin/clientes${baseQueryStr}`,
+            label: "Clientes",
+            icon: <I.Client className="h-4 w-4" />,
+        },
+        {
+            href: `/admin/mediciones${baseQueryStr}`,
+            label: "Mediciones",
+            icon: <I.Mediciones className="h-4 w-4" />,
+        },
+        {
+            href: `/admin/retos${baseQueryStr}`,
+            label: "Retos",
+            icon: <I.Challenge className="h-4 w-4" />,
+        },
+        {
+            href: `/admin/podio${baseQueryStr}`,
+            label: "Podio",
+            icon: <I.Podio className="h-4 w-4" />,
+        },
+        {
+            href: `/admin/movil${baseQueryStr}`,
+            label: "Aplicación Móvil",
+            icon: <I.Apps className="h-4 w-4" />,
+        },
+        {
+            href: `/admin/marketing${baseQueryStr}`,
+            label: "Marketing",
+            icon: <I.Marketing className="h-4 w-4" />,
+        },
+        {
+            href: `/admin/configuracion${baseQueryStr}`,
+            label: "Configuración",
+            icon: <I.Settings className="h-4 w-4" />,
+        },
+        {
+            href: `/admin/perfil${baseQueryStr}`,
+            label: "Perfil",
+            icon: <I.Profile className="h-4 w-4" />,
+        },
     ];
 
     return (
@@ -226,20 +303,22 @@ export default function AdminSidebar() {
                 id="mobile-sidebar"
                 role="dialog"
                 aria-modal="true"
-                className={`md:hidden fixed inset-0 z-50 ${open ? "pointer-events-auto" : "pointer-events-none"}`}
+                className={`md:hidden fixed inset-0 z-50 ${open ? "pointer-events-auto" : "pointer-events-none"
+                    }`}
             >
                 {/* overlay */}
                 <div
-                    className={`absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity ${open ? "opacity-100" : "opacity-0"}`}
+                    className={`absolute inset-0 bg-black/40 backdrop-blur-sm transition-opacity ${open ? "opacity-100" : "opacity-0"
+                        }`}
                     onClick={() => setOpen(false)}
                 />
                 {/* panel */}
                 <aside
                     className={[
-                        "absolute left-0 inset-y-0 h-dvh w-full sm:w-[420px]", // ← ocupa toda la pantalla (en sm limita el ancho)
+                        "absolute left-0 inset-y-0 h-dvh w-full sm:w-[420px]",
                         "transform border-r bg-background shadow-xl transition-transform",
                         open ? "translate-x-0" : "-translate-x-full",
-                        "flex flex-col", // para header / scroll / footer
+                        "flex flex-col",
                     ].join(" ")}
                 >
                     {/* header */}
@@ -272,7 +351,7 @@ export default function AdminSidebar() {
                         ))}
                     </nav>
 
-                    {/* footer */}
+                    {/* footer móvil */}
                     <div className="border-t p-3">
                         <button
                             onClick={onLogout}
@@ -295,11 +374,18 @@ export default function AdminSidebar() {
                 ].join(" ")}
             >
                 {/* Header */}
-                <div className={["flex items-center gap-3 px-4 py-4", collapsed ? "justify-center" : ""].join(" ")}>
+                <div
+                    className={[
+                        "flex items-center gap-3 px-4 py-4",
+                        collapsed ? "justify-center" : "",
+                    ].join(" ")}
+                >
                     <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-primary to-primary/60 shadow-sm" />
                     {!collapsed && (
                         <div className="min-w-0">
-                            <p className="truncate text-sm font-semibold leading-tight">Panel Admin</p>
+                            <p className="truncate text-sm font-semibold leading-tight">
+                                Panel Admin
+                            </p>
                         </div>
                     )}
                 </div>
@@ -313,29 +399,49 @@ export default function AdminSidebar() {
                 <div className="flex-1 overflow-y-auto px-3">
                     <nav className="flex flex-col gap-1 pb-4">
                         {LINKS.map((l) => (
-                            <NavItem key={l.href} href={l.href} label={l.label} icon={l.icon} collapsed={collapsed} />
+                            <NavItem
+                                key={l.href}
+                                href={l.href}
+                                label={l.label}
+                                icon={l.icon}
+                                collapsed={collapsed}
+                            />
                         ))}
                     </nav>
                 </div>
 
-                {/* Footer */}
+                {/* Footer escritorio */}
                 <div className="mt-auto sticky bottom-0 bg-background/80 backdrop-blur border-t px-3 py-3">
-                    <div className="flex items-center gap-2">
+                    {/* ⬅️ CAMBIO AQUÍ: layout del footer depende de `collapsed` */}
+                    <div
+                        className={[
+                            "gap-2",
+                            collapsed
+                                ? "flex flex-col items-stretch"
+                                : "flex flex-row items-center",
+                        ].join(" ")}
+                    >
                         <button
                             type="button"
                             onClick={toggleCollapsed}
-                            className="inline-flex items-center justify-center rounded-lg border px-2 py-2 hover:bg-default-100"
+                            className={[
+                                "inline-flex items-center justify-center rounded-lg border px-2 py-2 hover:bg-default-100",
+                                collapsed ? "w-full" : "",
+                            ].join(" ")}
                             title={collapsed ? "Expandir" : "Colapsar"}
                             aria-label={collapsed ? "Expandir sidebar" : "Colapsar sidebar"}
                         >
-                            <I.Chevron className={`h-4 w-4 transition-transform ${collapsed ? "rotate-180" : ""}`} />
+                            <I.Chevron
+                                className={`h-4 w-4 transition-transform ${collapsed ? "rotate-180" : ""
+                                    }`}
+                            />
                         </button>
 
                         <button
                             onClick={onLogout}
                             className={[
-                                "flex-1 inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm",
-                                "hover:bg-default-100",
+                                "inline-flex items-center justify-center gap-2 rounded-lg border px-3 py-2 text-sm hover:bg-default-100",
+                                collapsed ? "w-full" : "flex-1",
                             ].join(" ")}
                         >
                             <I.Logout className="h-4 w-4" />
